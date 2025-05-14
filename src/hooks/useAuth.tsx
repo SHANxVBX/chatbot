@@ -13,8 +13,9 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const CREATOR_AUTH_KEY = 'creatorLoggedIn';
+// Ensure these are exactly as required.
 const CREATOR_USERNAME = "pannikutty";
-// SHA-256 hash of "Hxp652728"
+// This is the SHA-256 hash of "Hxp652728"
 const HASHED_CREATOR_PASSWORD = "2d8f68c30e08f12b048a43e5658d8e8b1098f3688e576f2e0a5b7774819a5a07";
 
 // Helper function to hash a string using SHA-256 (client-side focused)
@@ -46,14 +47,33 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const login = useCallback(async (username_input: string, password_input: string): Promise<boolean> => {
-    const hashed_password_input = await sha256(password_input);
-    if (username_input === CREATOR_USERNAME && hashed_password_input === HASHED_CREATOR_PASSWORD) {
+    // Ensure inputs are trimmed directly within this function for robust comparison.
+    const trimmedUsername = username_input.trim();
+    const trimmedPassword = password_input.trim();
+
+    const hashed_password_input = await sha256(trimmedPassword);
+    
+    console.log("Attempting login with:");
+    console.log("Input Username (trimmed):", `"${trimmedUsername}"`);
+    console.log("Expected Username:", `"${CREATOR_USERNAME}"`);
+    console.log("Input Password Hash:", `"${hashed_password_input}"`);
+    console.log("Expected Password Hash:", `"${HASHED_CREATOR_PASSWORD}"`);
+
+    const usernameMatch = trimmedUsername === CREATOR_USERNAME;
+    const passwordMatch = hashed_password_input === HASHED_CREATOR_PASSWORD;
+
+    console.log("Username Match:", usernameMatch);
+    console.log("Password Match:", passwordMatch);
+
+    if (usernameMatch && passwordMatch) {
       if (typeof window !== 'undefined') {
         localStorage.setItem(CREATOR_AUTH_KEY, 'true');
       }
       setIsCreatorLoggedIn(true);
+      console.log("Login successful");
       return true;
     }
+    console.log("Login failed");
     return false;
   }, [setIsCreatorLoggedIn]);
 
@@ -81,4 +101,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-
