@@ -1,4 +1,3 @@
-
 "use client";
 
 import type { AISettings } from "@/lib/types";
@@ -6,9 +5,10 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { KeyRound, Cog, Server, ShieldAlert, ShieldCheck } from 'lucide-react'; // Changed DatabaseZap to Server, Added Shield icons
+import { KeyRound, Cog, Server, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/useAuth"; // Import useAuth
+import { useAuth } from "@/hooks/useAuth"; 
+import { cn } from "@/lib/utils";
 
 interface SettingsViewProps {
   settings: AISettings;
@@ -17,14 +17,14 @@ interface SettingsViewProps {
 
 export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) {
   const { toast } = useToast();
-  const { isCreatorLoggedIn } = useAuth(); // Get auth state
+  const { isCreatorLoggedIn } = useAuth(); 
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!isCreatorLoggedIn) {
       toast({
         title: "Permission Denied",
-        description: "Only creators can modify API settings.",
+        description: "Only creators can modify AI settings.",
         variant: "destructive",
       });
       return;
@@ -47,7 +47,7 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
     <Card className="glassmorphic border-none shadow-none">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <Cog className="h-5 w-5 text-primary" /> {/* Changed icon */}
+          <Cog className="h-5 w-5 text-primary" /> 
           AI Provider Settings
         </CardTitle>
         {!isCreatorLoggedIn && (
@@ -84,19 +84,22 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
               <Cog className="h-4 w-4 text-primary/80" />
               Model
             </Label>
-            <Input
-              id="model"
-              name="model"
-              defaultValue={settings.model}
-              placeholder="e.g., openrouter/auto"
-              className="glassmorphic-input"
-              readOnly={!isCreatorLoggedIn}
-              disabled={!isCreatorLoggedIn}
-            />
+            <div className={cn(!isCreatorLoggedIn && "blur-[4px] select-none pointer-events-none")}>
+              <Input
+                id="model"
+                name="model"
+                defaultValue={settings.model}
+                placeholder={isCreatorLoggedIn ? "e.g., openrouter/auto" : "Set by Creator"}
+                className="glassmorphic-input"
+                readOnly={!isCreatorLoggedIn}
+                disabled={!isCreatorLoggedIn}
+                aria-hidden={!isCreatorLoggedIn} 
+              />
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="provider" className="flex items-center gap-1 text-sm">
-              <Server className="h-4 w-4 text-primary/80" /> {/* Changed icon */}
+              <Server className="h-4 w-4 text-primary/80" /> 
               Provider
             </Label>
             <Input
@@ -105,8 +108,8 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
               defaultValue={settings.provider}
               placeholder="e.g., OpenRouter"
               className="glassmorphic-input"
-              readOnly // Provider is not typically changed by user, set to OpenRouter
-              disabled // For now, this is conceptual and fixed
+              readOnly 
+              disabled 
             />
           </div>
           {isCreatorLoggedIn && (
