@@ -1,8 +1,7 @@
-
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import type { ReactNode } from 'react'; // Import ReactNode
+import type { ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface AuthContextType {
@@ -14,12 +13,11 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const CREATOR_AUTH_KEY = 'creatorLoggedIn';
-// Updated username and HASHED password
 const CREATOR_USERNAME = "pannikutty";
 // SHA-256 hash of "Hxp652728"
 const HASHED_CREATOR_PASSWORD = "2d8f68c30e08f12b048a43e5658d8e8b1098f3688e576f2e0a5b7774819a5a07";
 
-// Helper function to hash a string using SHA-256
+// Helper function to hash a string using SHA-256 (client-side focused)
 async function sha256(str: string): Promise<string> {
   if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
     const buffer = new TextEncoder().encode(str);
@@ -29,13 +27,8 @@ async function sha256(str: string): Promise<string> {
     return hashHex;
   }
   // Fallback for environments where crypto.subtle is not available
-  console.warn('Web Crypto API not available for password hashing. Login may not be secure.');
-  // For server-side or Node.js environments if ever needed (though this hook is client-side)
-  if (typeof process !== 'undefined' && process.versions && process.versions.node) {
-    const crypto = await import('crypto');
-    return crypto.createHash('sha256').update(str).digest('hex');
-  }
-  return str; // Insecure fallback
+  console.warn('Web Crypto API (window.crypto.subtle) not available for password hashing. Login will likely fail and is not secure.');
+  return str; // Insecure fallback: login will fail if comparing plain text to a hash.
 }
 
 
@@ -62,15 +55,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return true;
     }
     return false;
-  }, []);
+  }, [setIsCreatorLoggedIn]);
 
   const logout = useCallback(() => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem(CREATOR_AUTH_KEY);
     }
     setIsCreatorLoggedIn(false);
-    router.push('/'); // Redirect to home page after logout
-  }, [router]);
+    router.push('/'); 
+  }, [router, setIsCreatorLoggedIn]);
 
   const authProviderValue: AuthContextType = { isCreatorLoggedIn, login, logout };
 
