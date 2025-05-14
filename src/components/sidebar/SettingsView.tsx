@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { AISettings } from "@/lib/types";
@@ -5,8 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { KeyRound, Cog, DatabaseZap } from 'lucide-react';
+import { KeyRound, Cog, Server, ShieldAlert, ShieldCheck } from 'lucide-react'; // Changed DatabaseZap to Server, Added Shield icons
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth"; // Import useAuth
 
 interface SettingsViewProps {
   settings: AISettings;
@@ -15,9 +17,18 @@ interface SettingsViewProps {
 
 export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) {
   const { toast } = useToast();
+  const { isCreatorLoggedIn } = useAuth(); // Get auth state
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!isCreatorLoggedIn) {
+      toast({
+        title: "Permission Denied",
+        description: "Only creators can modify API settings.",
+        variant: "destructive",
+      });
+      return;
+    }
     const formData = new FormData(event.currentTarget);
     const newSettings: AISettings = {
       apiKey: formData.get("apiKey") as string,
@@ -36,25 +47,36 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
     <Card className="glassmorphic border-none shadow-none">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <DatabaseZap className="h-5 w-5 text-primary" />
+          <Cog className="h-5 w-5 text-primary" /> {/* Changed icon */}
           AI Provider Settings
         </CardTitle>
-        <CardDescription>Configure your AI model and API access.</CardDescription>
+        {!isCreatorLoggedIn && (
+            <CardDescription className="flex items-center gap-1 text-sm text-amber-500 dark:text-amber-400">
+                <ShieldAlert className="h-4 w-4" /> Settings are view-only. Log in as creator to modify.
+            </CardDescription>
+        )}
+         {isCreatorLoggedIn && (
+            <CardDescription className="flex items-center gap-1 text-sm text-green-500 dark:text-green-400">
+                <ShieldCheck className="h-4 w-4" /> Creator mode: Settings are editable.
+            </CardDescription>
+        )}
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
             <Label htmlFor="apiKey" className="flex items-center gap-1 text-sm">
               <KeyRound className="h-4 w-4 text-primary/80" />
-              API Key (e.g., OpenRouter)
+              API Key
             </Label>
             <Input
               id="apiKey"
               name="apiKey"
-              type="password"
-              defaultValue={settings.apiKey}
-              placeholder="sk-or-..."
+              type={isCreatorLoggedIn ? "text" : "password"}
+              defaultValue={isCreatorLoggedIn ? settings.apiKey : "**********"}
+              placeholder={isCreatorLoggedIn ? "Enter your API key" : "Set by Creator"}
               className="glassmorphic-input"
+              readOnly={!isCreatorLoggedIn}
+              disabled={!isCreatorLoggedIn}
             />
           </div>
           <div className="space-y-2">
@@ -66,27 +88,32 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
               id="model"
               name="model"
               defaultValue={settings.model}
-              placeholder="e.g., mistralai/mixtral-8x7b-instruct"
+              placeholder="e.g., openrouter/auto"
               className="glassmorphic-input"
+              readOnly={!isCreatorLoggedIn}
+              disabled={!isCreatorLoggedIn}
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="provider" className="flex items-center gap-1 text-sm">
-              <DatabaseZap className="h-4 w-4 text-primary/80" />
-              Provider (Conceptual)
+              <Server className="h-4 w-4 text-primary/80" /> {/* Changed icon */}
+              Provider
             </Label>
             <Input
               id="provider"
               name="provider"
               defaultValue={settings.provider}
-              placeholder="e.g., OpenRouterProvider"
+              placeholder="e.g., OpenRouter"
               className="glassmorphic-input"
-              disabled // For now, this is conceptual
+              readOnly // Provider is not typically changed by user, set to OpenRouter
+              disabled // For now, this is conceptual and fixed
             />
           </div>
-          <Button type="submit" className="w-full bg-primary/80 hover:bg-primary text-primary-foreground">
-            Save Settings
-          </Button>
+          {isCreatorLoggedIn && (
+            <Button type="submit" className="w-full bg-primary/80 hover:bg-primary text-primary-foreground">
+              Save Settings
+            </Button>
+          )}
         </form>
       </CardContent>
     </Card>

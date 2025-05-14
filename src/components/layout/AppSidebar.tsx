@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { AISettings } from "@/lib/types";
@@ -8,7 +9,7 @@ import { FileUploadView } from "@/components/sidebar/FileUploadView";
 import { WebSearchView } from "@/components/sidebar/WebSearchView";
 import { CyberLogoIcon } from "@/components/icons/CyberLogoIcon";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { DatabaseZap, UploadCloud, Globe, History, ChevronRight } from 'lucide-react';
+import { Cog, UploadCloud, Globe, History, ChevronRight } from 'lucide-react'; // Changed DatabaseZap to Cog
 
 interface AppSidebarProps {
   settings: AISettings;
@@ -16,8 +17,8 @@ interface AppSidebarProps {
   onFileUpload: (fileDataUri: string, fileName: string, fileType: string) => void;
   onWebSearch: (query: string) => void;
   isSearchingWeb: boolean;
-  chatHistory: { id: string, name: string }[]; // Placeholder for chat history feature
-  onSelectChat: (id: string) => void; // Placeholder
+  chatHistory: { id: string, name: string }[]; 
+  onSelectChat: (id: string) => void; 
 }
 
 export function AppSidebar({
@@ -61,7 +62,7 @@ export function AppSidebar({
             <AccordionItem value="settings" className="border-b-0">
                <AccordionTrigger className="px-4 py-3 text-sm font-medium hover:no-underline hover:bg-sidebar-accent group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:py-2">
                  <div className="flex items-center gap-2">
-                    <DatabaseZap className="h-4 w-4 text-primary group-data-[collapsible=icon]:h-5 group-data-[collapsible=icon]:w-5" />
+                    <Cog className="h-4 w-4 text-primary group-data-[collapsible=icon]:h-5 group-data-[collapsible=icon]:w-5" /> {/* Changed icon */}
                     <span className="group-data-[collapsible=icon]:hidden">Settings</span>
                  </div>
                </AccordionTrigger>

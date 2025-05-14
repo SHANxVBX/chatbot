@@ -1,19 +1,21 @@
+
 "use client";
 
 import { Button } from "@/components/ui/button";
 import { CyberLogoIcon } from "@/components/icons/CyberLogoIcon";
-import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
-import { Settings, Moon, Sun } from "lucide-react";
+import { SidebarTrigger } from "@/components/ui/sidebar"; // Removed useSidebar as toggle is handled by SidebarTrigger
+import { Settings, Moon, Sun, LogIn, LogOut } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import Link from "next/link";
 
 export function AppHeader() {
-  const { toggleSidebar } = useSidebar();
   const [mounted, setMounted] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const { isCreatorLoggedIn, logout } = useAuth();
 
   useEffect(() => {
     setMounted(true);
-    // Check initial theme from HTML element
     const currentTheme = document.documentElement.classList.contains('dark');
     setIsDarkMode(currentTheme);
   }, []);
@@ -28,7 +30,6 @@ export function AppHeader() {
       document.documentElement.classList.add('light');
       document.documentElement.classList.remove('dark');
     }
-    // You might want to save this preference in localStorage
   };
 
   if (!mounted) {
@@ -41,6 +42,7 @@ export function AppHeader() {
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 animate-pulse rounded-md bg-muted" />
           <div className="h-8 w-8 animate-pulse rounded-md bg-muted" />
+          <div className="h-8 w-20 animate-pulse rounded-md bg-muted" />
         </div>
       </header>
     );
@@ -59,6 +61,20 @@ export function AppHeader() {
         <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">
           {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
         </Button>
+        
+        {isCreatorLoggedIn ? (
+          <Button variant="ghost" onClick={logout} className="text-sm">
+            <LogOut className="mr-2 h-4 w-4" />
+            Logout
+          </Button>
+        ) : (
+          <Button variant="ghost" asChild className="text-sm">
+            <Link href="/login">
+              <LogIn className="mr-2 h-4 w-4" />
+              Creator Login
+            </Link>
+          </Button>
+        )}
         {/* Settings button could open a dialog or navigate to a settings page */}
         {/* <Button variant="ghost" size="icon" aria-label="Settings">
           <Settings className="h-5 w-5" />

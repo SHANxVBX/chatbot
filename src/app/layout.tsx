@@ -2,6 +2,7 @@ import type {Metadata} from 'next';
 import { Geist, Geist_Mono } from 'next/font/google'; // Corrected import
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster"; // Import Toaster
+import { AuthProvider } from '@/hooks/useAuth.tsx'; // Import AuthProvider, explicitly use .tsx
 
 const geistSans = Geist({ // Corrected instantiation
   variable: '--font-geist-sans',
@@ -26,8 +27,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased font-sans`}>
-        {children}
-        <Toaster /> {/* Add Toaster for notifications */}
+        <AuthProvider>
+          {children}
+          <Toaster /> {/* Add Toaster for notifications */}
+        </AuthProvider>
       </body>
     </html>
   );
