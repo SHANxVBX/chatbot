@@ -12,43 +12,37 @@ const SETTINGS_STORAGE_KEY = "cyberchat-ai-settings";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const APP_SITE_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:9002";
-const APP_TITLE = "CyberChat AI";
+const APP_TITLE = "CyberChat AI by Shan"; // Updated App Title
 
 const uncertaintyPhrases = [
   "i don't know", "i'm not sure", "i am not sure", "i'm unsure", "unsure",
   "i can't recall", "i cannot recall", "i do not know", "don't know",
   "it's unclear to me", "i lack information", "i have no information",
-  "i'm not certain", "uncertain", "no idea", "haven't a clue"
+  "i'm not certain", "uncertain", "no idea", "haven't a clue",
+  "i cannot provide", "i'm unable to"
 ];
 
-// Minimal stop words for client-side query refinement, more extensive list in smart-web-search flow
-const clientStopWords = new Set(['a', 'an', 'the', 'is', 'are', 'was', 'were']);
+const clientStopWords = new Set(['a', 'an', 'the', 'is', 'are', 'was', 'were', 'what', 'who', 'when', 'where', 'why', 'how', 'of', 'for', 'in', 'on', 'at', 'by']);
 
 function refineSearchQueryForContext(originalQuery: string, chatHistory: Message[]): string {
   let query = originalQuery.toLowerCase();
-  
-  // Basic removal of client-side stop words
-  query = query.split(/\s+/).filter(word => !clientStopWords.has(word)).join(' ');
+  query = query.split(/\s+/).filter(word => !clientStopWords.has(word) && word.length > 1).join(' ');
 
-  // Add context from last 1-2 user messages if relevant
-  // Get the most recent user messages that are not the current one being processed
   const relevantHistory = chatHistory.filter(m => m.sender === 'user' && m.text.toLowerCase() !== originalQuery.toLowerCase()).slice(-2);
-  
   let contextKeywords = "";
   if (relevantHistory.length > 0) {
     contextKeywords = relevantHistory.map(m => m.text.toLowerCase().split(/\s+/).filter(word => !clientStopWords.has(word) && word.length > 2).join(" ")).join(" ");
   }
   
-  // If current query is very short and seems like a follow-up, prepend context.
-  if (query.split(/\s+/).length <= 3 && (query.includes("more") || query.includes("about it") || query.includes("that"))) {
+  if (query.split(/\s+/).length <= 3 && (query.includes("more") || query.includes("about it") || query.includes("that") || query.includes("this"))) {
      if (contextKeywords) {
-        query = contextKeywords.split(/\s+/).slice(0,5).join(" ") + " " + query; // limit context length
+        query = contextKeywords.split(/\s+/).slice(0,5).join(" ") + " " + query;
      }
-  } else if (contextKeywords && query.length < originalQuery.length * 0.5) { // If query significantly shortened
+  } else if (contextKeywords && query.length < originalQuery.length * 0.7) { 
     query = contextKeywords.split(/\s+/).slice(0,5).join(" ") + " " + originalQuery.toLowerCase();
   }
   
-  return query.trim() || originalQuery; // Fallback to original query if refinement results in empty
+  return query.trim() || originalQuery;
 }
 
 
@@ -64,9 +58,9 @@ export function useChatController() {
       const storedSettings = localStorage.getItem(SETTINGS_STORAGE_KEY);
       return storedSettings
         ? JSON.parse(storedSettings)
-        : { apiKey: "", model: "openai/gpt-4o", provider: "OpenRouter" };
+        : { apiKey: "", model: "openrouter/auto", provider: "OpenRouter" }; // Default to OpenRouter and auto model
     }
-    return { apiKey: "", model: "openai/gpt-4o", provider: "OpenRouter" };
+    return { apiKey: "", model: "openrouter/auto", provider: "OpenRouter" };
   });
 
   const getDefaultWelcomeMessage = useCallback((): Message[] => [{
@@ -124,12 +118,10 @@ export function useChatController() {
       fileDataUri,
     };
     setMessages((prevMessages) => {
-      // If only welcome message exists, replace it if user sends a non-empty message
       if (prevMessages.length === 1 && prevMessages[0].id.startsWith('ai-welcome-')) {
         if (sender === 'user' && newMessage.text.trim() !== "") { 
-             return [newMessage]; // Replace welcome with user's first message
+             return [newMessage];
         }
-         // Otherwise, append (e.g. system message, or if user somehow sends empty)
         return [...prevMessages, newMessage]; 
       }
       return [...prevMessages, newMessage];
@@ -141,14 +133,19 @@ export function useChatController() {
     setMessages(prev => prev.map(msg => msg.id === id ? {...msg, ...updates, timestamp: Date.now()} : msg));
   }, []);
 
-  const streamMessageUpdate = useCallback((id: string, chunk: string) => {
+  const streamMessageUpdate = useCallback((id: string, chunk: string, replace = false) => {
     setMessages(prev => {
       return prev.map(msg => {
         if (msg.id === id) {
-          // If current text is a placeholder (like "Thinking..."), replace it with the first chunk.
-          // Otherwise, append the chunk.
-          const isInitialPlaceholder = msg.text === "Thinking..." || msg.text.startsWith("Processing") || msg.text.startsWith("Searching");
-          const updatedText = isInitialPlaceholder ? chunk : (msg.text || "") + chunk; 
+          const currentText = msg.text || "";
+          // Replace if `replace` is true OR if current text is a known placeholder
+          const isPlaceholder = replace || 
+                                currentText === "Thinking..." ||
+                                currentText.startsWith("Processing document") || 
+                                currentText.startsWith("Searching the web for") ||
+                                currentText.includes("Now summarizing it for you... 🧐"); // For summarization placeholder
+                                
+          const updatedText = isPlaceholder ? chunk : currentText + chunk;
           return { ...msg, text: updatedText, timestamp: Date.now() };
         }
         return msg;
@@ -158,7 +155,6 @@ export function useChatController() {
 
   const handleSendMessage = async (text: string, file?: { dataUri: string; name: string; type: string }) => {
     const userMessageText = text || (file ? `Attached: ${file.name}`: "");
-    // Prevent sending empty messages unless a file is attached
     if (!userMessageText.trim() && !file) return; 
 
     const userMessageId = addMessage(userMessageText, "user", file ? "file_upload_request" : "text", file?.name, file?.type.startsWith("image/") ? file.dataUri : undefined, file?.dataUri);
@@ -168,241 +164,228 @@ export function useChatController() {
     const aiMessageId = addMessage("Thinking...", "ai", "text");
     setCurrentAIMessageId(aiMessageId);
 
+    let finalAiTextForDisplay = "";
+    let finalReasoning = "The AI processed the input, considered relevant information from its knowledge base and the conversation history, and generated the most appropriate response according to its programming and the provided context.";
+    let messageType: Message['type'] = 'text';
+
     if (!settings.apiKey || settings.apiKey.trim() === "") {
-      const endTime = Date.now();
-      const durationInSeconds = parseFloat(((endTime - startTime) / 1000).toFixed(1));
-      updateMessage(aiMessageId, {
-        text: "API key not set. Please configure your OpenRouter API key in the AI Provider Settings (sidebar).",
-        type: "error",
-        reasoning: "API key check failed: The API key is missing from the settings. AI communication cannot proceed without a valid API key.",
-        duration: durationInSeconds,
-      });
-      toast({
-        title: "API Key Missing",
-        description: "Configure your OpenRouter API key in settings.",
-        variant: "destructive",
-      });
-      setIsLoading(false);
-      setCurrentAIMessageId(null);
-      return;
-    }
+      finalAiTextForDisplay = "API key not set. Please configure your OpenRouter API key in the AI Provider Settings (sidebar).";
+      finalReasoning = "API key check failed: The API key is missing from the settings. AI communication cannot proceed without a valid API key.";
+      messageType = "error";
+      toast({ title: "API Key Missing", description: "Configure your OpenRouter API key in settings.", variant: "destructive" });
+    } else {
+      let accumulatedText = "";
+      let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+      let isFirstChunkOfInitialResponse = true;
 
-    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-    let accumulatedText = ""; 
-
-    try {
-      // Prepare message history, excluding system messages, the current "Thinking..." AI message, and initial welcome if it's the only other one.
-      const apiMessageHistory = messages
-        .filter(msg => {
-            if (msg.sender === 'system') return false; // Exclude system messages
-             // Exclude the initial welcome message if it's still present and we are about to send the first real user message
-            if (msg.id.startsWith('ai-welcome-') && messages.length <= 2 && messages.some(m=>m.id.startsWith('ai-welcome-'))) return false;
-            // Exclude the current AI placeholder message
-            if (msg.id === aiMessageId && (msg.text === "Thinking..." || msg.text.startsWith("Processing") || msg.text.startsWith("Searching"))) return false;
-            return true; 
-        })
-        .slice(-10) // Take last 10 relevant messages
-        .map(msg => {
-          const role = msg.sender === 'user' ? 'user' : 'assistant';
-          let content: any = msg.text;
-          // Handle image attachments for user messages
-          if (msg.sender === 'user' && msg.fileDataUri && msg.filePreviewUri?.startsWith('data:image')) {
-            content = [{ type: 'text', text: msg.text || "Image attached" }];
-            content.push({ type: 'image_url', image_url: { url: msg.fileDataUri } });
-          } else if (msg.sender === 'user' && msg.fileDataUri && !msg.filePreviewUri?.startsWith('data:image')) {
-            // For non-image files, describe the upload
-            content = `User uploaded a file: ${msg.fileName}. User's message: ${msg.text}`;
-          }
-          return { role, content };
-        });
-      
-      // Construct the current user message for the API
-      const currentUserMessageForAPI: any = { role: 'user', content: text };
-      if (file && file.type.startsWith("image/")) {
-          currentUserMessageForAPI.content = [
-              { type: 'text', text: text || "Image attached"},
-              { type: 'image_url', image_url: { url: file.dataUri } }
-          ];
-      } else if (file) {
-          currentUserMessageForAPI.content = `User uploaded a file: ${file.name}. User's message: ${text}`;
-      }
-
-      const payload = {
-        model: settings.model,
-        messages: [
-          { role: "system", content: "You are CyberChat AI, a helpful and slightly futuristic AI assistant created by Shan. Provide concise and informative responses. Your responses should be formatted using basic markdown (bold, italics, newlines, code blocks, etc.). Incorporate friendly emojis where appropriate in your final answer, but not in the reasoning part." },
-          ...apiMessageHistory, // Add the filtered history
-          currentUserMessageForAPI // Add the current user's message
-        ],
-        stream: true,
-        http_referer: APP_SITE_URL, // Optional: For OpenRouter analytics
-        x_title: APP_TITLE,        // Optional: For OpenRouter analytics
-      };
-
-      const response = await fetch(OPENROUTER_API_URL, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${settings.apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": APP_SITE_URL, 
-          "X-Title": APP_TITLE,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: { message: "Unknown API error. Check API key, model selection, or network." }}));
-        const errorMessage = errorData?.error?.message || `API Error: ${response.status} ${response.statusText}`;
-        throw new Error(errorMessage);
-      }
-
-      if (!response.body) {
-        throw new Error("Response body is null. Cannot process stream.");
-      }
-
-      reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          // Stream finished
-          break; 
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const eventSeparator = "\n\n";
-        let eventEndIndex;
-        // Process server-sent events (SSE)
-        while ((eventEndIndex = buffer.indexOf(eventSeparator)) !== -1) {
-            const eventPart = buffer.substring(0, eventEndIndex);
-            buffer = buffer.substring(eventEndIndex + eventSeparator.length);
-
-            if (eventPart.startsWith("data: ")) {
-                const jsonData = eventPart.substring(6).trim();
-                if (jsonData === "[DONE]") {
-                    // OpenAI-like signal for stream end
-                    if (reader) await reader.cancel(); 
-                    reader = null; // Mark reader as cancelled/done
-                    break; // Exit inner while loop for SSE processing
-                }
-                try {
-                    const chunkData = JSON.parse(jsonData);
-                    if (chunkData.choices && chunkData.choices[0].delta && chunkData.choices[0].delta.content) {
-                        const contentChunk = chunkData.choices[0].delta.content;
-                        streamMessageUpdate(aiMessageId, contentChunk);
-                        accumulatedText += contentChunk;
-                    } else if (chunkData.choices && chunkData.choices[0].finish_reason) {
-                        // Handle finish reason (e.g., 'stop', 'length')
-                        if(chunkData.choices[0].finish_reason === 'stop' || chunkData.choices[0].finish_reason === 'length') { 
-                            if (reader) await reader.cancel();
-                            reader = null; // Mark reader as cancelled/done
-                            break; // Exit inner while loop for SSE processing
-                        }
-                    }
-                } catch (e) {
-                    console.error("Error parsing stream JSON:", jsonData, e);
-                    // Update message with error, but don't stop processing other potential chunks
-                    setMessages(prev => prev.map(msg => msg.id === aiMessageId ? {
-                        ...msg,
-                        text: `Error: Stream parsing error. ${(e as Error).message}. Data: ${jsonData.substring(0,100)}...`,
-                        type: "error"
-                    } : msg));
-                }
+      try {
+        const apiMessageHistory = messages
+          .filter(msg => msg.sender !== 'system' && msg.id !== aiMessageId && !msg.id.startsWith('ai-welcome-'))
+          .slice(-10)
+          .map(msg => {
+            const role = msg.sender === 'user' ? 'user' : 'assistant';
+            let content: any = msg.text;
+            if (msg.sender === 'user' && msg.fileDataUri && msg.filePreviewUri?.startsWith('data:image')) {
+              content = [{ type: 'text', text: msg.text || "Image attached" }];
+              content.push({ type: 'image_url', image_url: { url: msg.fileDataUri } });
+            } else if (msg.sender === 'user' && msg.fileDataUri) {
+              content = `User uploaded a file: ${msg.fileName}. User's message: ${msg.text}`;
             }
-        }
-        if (reader === null) break; // Exit outer while loop if reader was cancelled
-      }
-    } catch (error) {
-      console.error("Error in handleSendMessage:", error);
-      const errorMsg = (error as Error).message || "Failed to connect to AI or process its response. Check console.";
-      const endTime = Date.now();
-      const durationInSeconds = parseFloat(((endTime - startTime) / 1000).toFixed(1));
-      updateMessage(aiMessageId, { 
-        text: `Error: ${errorMsg}`, 
-        type: "error",
-        reasoning: `An error occurred while attempting to communicate with or process the response from the AI service: ${errorMsg}`,
-        duration: durationInSeconds,
-      });
-      toast({
-        title: "AI Communication Error",
-        description: errorMsg,
-        variant: "destructive",
-      });
-    } finally {
-      if (reader) {
-        try { await reader.cancel(); } catch (e) { console.error("Error cancelling reader:", e); }
-      }
-      
-      let finalAiText = accumulatedText;
-      const placeholderReasoning = "The AI processed the input, considered relevant information from its knowledge base and the conversation history, and generated the most appropriate response according to its programming and the provided context.";
-
-      // Check for uncertainty and trigger web search if needed
-      const lowercasedAiText = finalAiText.toLowerCase();
-      const isUncertain = uncertaintyPhrases.some(phrase => lowercasedAiText.includes(phrase));
-
-      if (isUncertain && !file) { // Don't search web if it was a file upload context primarily
-        const originalUserMessage = messages.find(m => m.id === userMessageId);
-        const queryForSearch = refineSearchQueryForContext(originalUserMessage?.text || text, messages);
-        
-        if (queryForSearch) {
-          setIsSearchingWeb(true);
-          // Update AI message to indicate web search is happening
-          updateMessage(aiMessageId, { 
-            text: `${finalAiText}\n\nSearching the web for more information about "${queryForSearch}"...`, 
-            reasoning: placeholderReasoning + ` Detected uncertainty, initiating web search for "${queryForSearch}".`
+            return { role, content };
           });
-          try {
-            const searchFlowResult = await smartWebSearch({ query: queryForSearch });
-            const searchResultsMarkdownContent = searchFlowResult.searchResultsMarkdown;
-            
-            const collapsibleWrapper = `\n\n:::collapsible Web Search Results for "${queryForSearch}"\n${searchResultsMarkdownContent}\n:::`;
-            finalAiText += collapsibleWrapper; // Append search results to the original AI text
-            
-          } catch (searchError) {
-            console.error("Error during web search enhancement:", searchError);
-            finalAiText += `\n\nAn error occurred while trying to search the web: ${(searchError as Error).message}`;
-          } finally {
-            setIsSearchingWeb(false);
-          }
+        
+        const currentUserMessageForAPI: any = { role: 'user', content: text };
+        if (file && file.type.startsWith("image/")) {
+            currentUserMessageForAPI.content = [
+                { type: 'text', text: text || "Image attached"},
+                { type: 'image_url', image_url: { url: file.dataUri } }
+            ];
+        } else if (file) {
+            currentUserMessageForAPI.content = `User uploaded a file: ${file.name}. User's message: ${text}`;
         }
-      }
-      
-      const endTime = Date.now();
-      const durationInSeconds = parseFloat(((endTime - startTime) / 1000).toFixed(1));
 
-      // Final update to the AI message with all content
-      setMessages(prev => {
-        return prev.map(msg => {
-          if (msg.id === aiMessageId) {
-            let currentText = finalAiText || msg.text; // Use accumulated text, or existing if empty
-            let currentType = msg.type || 'text';
-            let currentReasoning = msg.reasoning || placeholderReasoning;
+        const initialPayload = {
+          model: settings.model,
+          messages: [
+            { role: "system", content: "You are CyberChat AI, a helpful and slightly futuristic AI assistant created by Shan. Provide concise and informative responses. Your responses should be formatted using basic markdown (bold, italics, newlines, code blocks, etc.). Incorporate friendly emojis where appropriate in your final answer, but not in the reasoning part. If you are unsure or don't know the answer, clearly state that." },
+            ...apiMessageHistory,
+            currentUserMessageForAPI
+          ],
+          stream: true,
+          http_referer: APP_SITE_URL,
+          x_title: APP_TITLE,
+        };
 
-            // If text is still a placeholder, it means no content was streamed or an error occurred before streaming
-            if (currentText === "Thinking..." || currentText.startsWith("Processing") || currentText.startsWith("Searching")) {
-                 currentText = (msg.type === 'error' && msg.text !== "Thinking...") ? msg.text : "No response generated or an issue occurred. Please check the API key and model settings.";
-                 if (msg.type !== 'error') currentType = 'error'; // Mark as error if no useful text
-                 currentReasoning = msg.reasoning || "The AI service did not return a valid response. This could be due to network issues, incorrect API configuration, or problems with the AI model itself.";
+        const response = await fetch(OPENROUTER_API_URL, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${settings.apiKey}`, "Content-Type": "application/json", "HTTP-Referer": APP_SITE_URL, "X-Title": APP_TITLE },
+          body: JSON.stringify(initialPayload),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: { message: "Unknown API error." }}));
+          throw new Error(errorData?.error?.message || `API Error: ${response.status} ${response.statusText}`);
+        }
+        if (!response.body) throw new Error("Response body is null.");
+
+        reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const eventSeparator = "\n\n";
+          let eventEndIndex;
+          while ((eventEndIndex = buffer.indexOf(eventSeparator)) !== -1) {
+              const eventPart = buffer.substring(0, eventEndIndex);
+              buffer = buffer.substring(eventEndIndex + eventSeparator.length);
+              if (eventPart.startsWith("data: ")) {
+                  const jsonData = eventPart.substring(6).trim();
+                  if (jsonData === "[DONE]") { if (reader) await reader.cancel(); reader = null; break; }
+                  try {
+                      const chunkData = JSON.parse(jsonData);
+                      if (chunkData.choices && chunkData.choices[0].delta && chunkData.choices[0].delta.content) {
+                          const contentChunk = chunkData.choices[0].delta.content;
+                          streamMessageUpdate(aiMessageId, contentChunk, isFirstChunkOfInitialResponse);
+                          accumulatedText += contentChunk;
+                          isFirstChunkOfInitialResponse = false;
+                      } else if (chunkData.choices && chunkData.choices[0].finish_reason) {
+                          if(chunkData.choices[0].finish_reason === 'stop' || chunkData.choices[0].finish_reason === 'length') { 
+                            if (reader) await reader.cancel(); reader = null; break; 
+                          }
+                      }
+                  } catch (e) { console.error("Error parsing stream JSON:", jsonData, e); }
+              }
+          }
+          if (reader === null) break;
+        }
+        finalAiTextForDisplay = accumulatedText;
+
+        // Uncertainty check and potential second AI call
+        const lowercasedAiText = accumulatedText.toLowerCase();
+        const isUncertain = uncertaintyPhrases.some(phrase => lowercasedAiText.includes(phrase));
+
+        if (isUncertain && !file) {
+          setIsSearchingWeb(true);
+          messageType = 'search_result';
+          finalReasoning += " Detected uncertainty in the initial response.";
+          const queryForSearch = refineSearchQueryForContext(userMessageText, messages);
+          
+          updateMessage(aiMessageId, { text: accumulatedText + `\n\nAttempting to find more information online for "${queryForSearch}"... 🌐` });
+
+          const searchFlowResult = await smartWebSearch({ query: queryForSearch });
+          const searchResultsMarkdownContent = searchFlowResult.searchResultsMarkdown;
+          
+          finalReasoning += ` Web search for "${queryForSearch}" was performed.`;
+
+          const isActualWebResult = searchResultsMarkdownContent && !searchResultsMarkdownContent.toLowerCase().includes("unable to find current information") && !searchResultsMarkdownContent.toLowerCase().includes("an error occurred while searching");
+
+          if (isActualWebResult) {
+            updateMessage(aiMessageId, { text: accumulatedText + `\n\nFound information online for "${queryForSearch}". Now summarizing it for you... 🧐` });
+            
+            const summarizationApiMessages = [
+              { role: "system", content: `You are CyberChat AI. The user asked: "${userMessageText}". You previously responded with some uncertainty. Web search results related to "${queryForSearch}" are provided below. Please synthesize this information to provide a comprehensive answer to the user's original question. If the search results are irrelevant, state that and try to answer from your general knowledge if possible, or indicate you still cannot provide a definitive answer. Format your response using basic markdown and friendly emojis.` },
+              ...apiMessageHistory, // Original history
+              { role: "user", content: userMessageText }, // Original user query
+              { role: "assistant", content: `Context from web search about "${queryForSearch}":\n${searchResultsMarkdownContent}` },
+              { role: "user", content: `Based on the web search results provided, please answer my original question: "${userMessageText}"` } // Re-iterate to focus AI
+            ];
+
+            const summarizationPayload = { model: settings.model, messages: summarizationApiMessages, stream: true, http_referer: APP_SITE_URL, x_title: APP_TITLE };
+            const summarizationResponse = await fetch(OPENROUTER_API_URL, { method: "POST", headers: { "Authorization": `Bearer ${settings.apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(summarizationPayload) });
+
+            if (!summarizationResponse.ok) throw new Error(`Summarization API Error: ${summarizationResponse.status}`);
+            if (!summarizationResponse.body) throw new Error("Summarization response body is null.");
+
+            reader = summarizationResponse.body.getReader(); // Re-assign reader for the new stream
+            let summarizedText = "";
+            let isFirstSummaryChunk = true;
+            buffer = ""; // Reset buffer for new stream
+
+            // eslint-disable-next-line no-constant-condition
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const eventSeparator = "\n\n";
+              let eventEndIndex;
+              while ((eventEndIndex = buffer.indexOf(eventSeparator)) !== -1) {
+                  const eventPart = buffer.substring(0, eventEndIndex);
+                  buffer = buffer.substring(eventEndIndex + eventSeparator.length);
+                  if (eventPart.startsWith("data: ")) {
+                      const jsonData = eventPart.substring(6).trim();
+                      if (jsonData === "[DONE]") { if (reader) await reader.cancel(); reader = null; break; }
+                      try {
+                          const chunkData = JSON.parse(jsonData);
+                          if (chunkData.choices && chunkData.choices[0].delta && chunkData.choices[0].delta.content) {
+                              const contentChunk = chunkData.choices[0].delta.content;
+                              streamMessageUpdate(aiMessageId, contentChunk, isFirstSummaryChunk); // Replace "Now summarizing..."
+                              summarizedText += contentChunk;
+                              isFirstSummaryChunk = false;
+                          } else if (chunkData.choices && chunkData.choices[0].finish_reason === 'stop') {
+                             if (reader) await reader.cancel(); reader = null; break;
+                          }
+                      } catch (e) { console.error("Error parsing summary stream JSON:", jsonData, e); }
+                  }
+              }
+              if (reader === null) break;
             }
             
-            return {
-              ...msg,
-              text: currentText, 
-              reasoning: currentReasoning,
-              duration: durationInSeconds,
-              type: currentType
-            };
+            if (summarizedText.trim()) {
+              finalAiTextForDisplay = summarizedText;
+              finalReasoning += " The AI then processed these web search results and incorporated them into its final answer.";
+            } else {
+              finalAiTextForDisplay = accumulatedText + `\n\nI found some information online, but had trouble summarizing it.`;
+              finalReasoning += " The summarization process did not yield content.";
+            }
+            finalAiTextForDisplay += `\n\n:::collapsible Web Search Results for "${queryForSearch}"\n${searchResultsMarkdownContent}\n:::`;
+
+          } else { // Web search failed or no relevant results
+            finalReasoning += ` Web search for "${queryForSearch}" did not yield usable results: "${searchResultsMarkdownContent || 'Internal search error'}".`;
+            finalAiTextForDisplay = accumulatedText + `\n\n${searchResultsMarkdownContent || 'Could not perform web search due to an internal error.'}`;
           }
-          return msg;
-        });
-      });
-      
-      setIsLoading(false);
-      setCurrentAIMessageId(null); 
+          setIsSearchingWeb(false);
+        }
+
+      } catch (error) {
+        console.error("Error in handleSendMessage:", error);
+        const errorMsg = (error as Error).message || "Failed to connect to AI. Check console.";
+        finalAiTextForDisplay = `Error: ${errorMsg}`;
+        finalReasoning = `An error occurred: ${errorMsg}`;
+        messageType = "error";
+        toast({ title: "AI Communication Error", description: errorMsg, variant: "destructive" });
+      } finally {
+        if (reader) {
+          try { await reader.cancel(); } catch (e) { console.error("Error cancelling reader:", e); }
+        }
+      }
     }
+      
+    const endTime = Date.now();
+    const durationInSeconds = parseFloat(((endTime - startTime) / 1000).toFixed(1));
+
+    setMessages(prev => {
+      return prev.map(msg => {
+        if (msg.id === aiMessageId) {
+          let textToSet = finalAiTextForDisplay;
+          if (!textToSet.trim() && messageType !== 'error') {
+            textToSet = "No response generated, or an issue occurred. Please check settings.";
+            if (finalReasoning === "The AI processed the input, considered relevant information from its knowledge base and the conversation history, and generated the most appropriate response according to its programming and the provided context.") {
+              finalReasoning = "The AI service did not return a valid response or the response was empty.";
+            }
+            messageType = 'error';
+          }
+          return { ...msg, text: textToSet, reasoning: finalReasoning, duration: durationInSeconds, type: messageType };
+        }
+        return msg;
+      });
+    });
+    
+    setIsLoading(false);
+    setCurrentAIMessageId(null); 
   };
 
   const handleFileUpload = async (fileDataUri: string, fileName: string, fileType: string) => {
@@ -411,40 +394,30 @@ export function useChatController() {
     const startTime = Date.now();
     const aiMessageId = addMessage(`Processing document "${fileName}"...`, "ai", "summary");
     setCurrentAIMessageId(aiMessageId);
+    let finalReasoning = "";
 
     try {
       const result = await summarizeUpload({ fileDataUri });
-      const endTime = Date.now();
-      const durationInSeconds = parseFloat(((endTime - startTime) / 1000).toFixed(1));
-      const reasoning = "The AI analyzed the uploaded document, identified key information, and generated a concise summary based on its content understanding capabilities. This involved extracting main points and rephrasing them succinctly.";
+      finalReasoning = `The AI analyzed the uploaded document "${fileName}", identified key information, and generated a concise summary based on its content understanding capabilities. This involved extracting main points and rephrasing them succinctly.`;
       updateMessage(aiMessageId, { 
         text: `Summary for ${fileName}:\n${result.summary}`, 
         type: "summary",
-        reasoning: reasoning,
-        duration: durationInSeconds,
+        reasoning: finalReasoning,
+        duration: parseFloat(((Date.now() - startTime) / 1000).toFixed(1)),
         fileName: fileName,
       });
-      toast({
-        title: "Summary Complete",
-        description: `${fileName} has been summarized.`,
-      });
+      toast({ title: "Summary Complete", description: `${fileName} has been summarized.` });
     } catch (error) {
-      const endTime = Date.now();
-      const durationInSeconds = parseFloat(((endTime - startTime) / 1000).toFixed(1));
-      const reasoning = `An error occurred during the document summarization process for "${fileName}". This could be due to an issue with the Genkit flow, the AI model's ability to process the document format, or the file content itself. Specific error: ${(error as Error).message}`;
+      finalReasoning = `An error occurred during the document summarization process for "${fileName}". This could be due to an issue with the Genkit flow, the AI model's ability to process the document format, or the file content itself. Specific error: ${(error as Error).message}`;
       console.error("Error summarizing file:", error);
       updateMessage(aiMessageId, {
         text: `Error summarizing ${fileName}: ${(error as Error).message || 'Unknown error'}. The AI core might be offline or the file format is not supported.`, 
         type: "error",
-        reasoning: reasoning,
-        duration: durationInSeconds,
+        reasoning: finalReasoning,
+        duration: parseFloat(((Date.now() - startTime) / 1000).toFixed(1)),
         fileName: fileName,
       });
-      toast({
-        title: "Summarization Failed",
-        description: (error as Error).message || "Could not summarize the file.",
-        variant: "destructive",
-      });
+      toast({ title: "Summarization Failed", description: (error as Error).message || "Could not summarize the file.", variant: "destructive" });
     } finally {
       setIsLoading(false);
       setCurrentAIMessageId(null);
@@ -458,54 +431,42 @@ export function useChatController() {
     const startTime = Date.now();
     const aiMessageId = addMessage(`Searching the web for "${query}"...`, "ai", "search_result");
     setCurrentAIMessageId(aiMessageId);
+    let finalReasoning = "";
 
     try {
       const result = await smartWebSearch({ query });
-      const endTime = Date.now();
-      const durationInSeconds = parseFloat(((endTime - startTime) / 1000).toFixed(1));
-      const reasoning = `The AI initiated a web search for "${query}", retrieved relevant snippets from search results using an external API (DuckDuckGo), and then synthesized this information into a coherent summary.`;
-      
-      // Use the title for the collapsible section to match the query
+      finalReasoning = `The AI initiated a web search for "${query}", retrieved relevant snippets from search results using an external API (DuckDuckGo), and then formatted this information.`;
       const collapsibleContent = result.searchResultsMarkdown;
       const fullText = `Web search results for "${query}":\n\n:::collapsible Web Search Results for "${query}"\n${collapsibleContent}\n:::`;
 
       updateMessage(aiMessageId, {
         text: fullText, 
         type: "search_result",
-        reasoning: reasoning,
-        duration: durationInSeconds
+        reasoning: finalReasoning,
+        duration: parseFloat(((Date.now() - startTime) / 1000).toFixed(1))
       });
-      toast({
-        title: "Web Search Complete",
-        description: `Found information for "${query}".`,
-      });
+      toast({ title: "Web Search Complete", description: `Found information for "${query}".` });
     } catch (error) {
-      const endTime = Date.now();
-      const durationInSeconds = parseFloat(((endTime - startTime) / 1000).toFixed(1));
       const baseErrorMessage = (error as Error).message || 'Unknown error';
       let displayedErrorMessage = `Error searching web for "${query}": ${baseErrorMessage}`;
-      let finalReasoning;
-
-      if (!baseErrorMessage.endsWith('.')) {
-          displayedErrorMessage += '.';
-      }
-      // More user-friendly error based on instructions
+      if (!baseErrorMessage.endsWith('.')) displayedErrorMessage += '.';
+      
       if (baseErrorMessage.includes("Unable to find current information online") || baseErrorMessage.includes("No relevant information found online")) {
           displayedErrorMessage = "Unable to find current information online. Please check a reliable news source.";
           finalReasoning = `The web search for "${query}" did not yield relevant results based on the filtering criteria. The external API may not have found matching content or the content did not meet recency/keyword requirements.`;
       } else {
           displayedErrorMessage = `An error occurred while searching online.`;
-           finalReasoning = `An error occurred while performing the web search for "${query}". The specific error was: "${baseErrorMessage}". This could be due to issues with the search API, network connectivity, or the formatting of results.`;
+          finalReasoning = `An error occurred while performing the web search for "${query}". The specific error was: "${baseErrorMessage}". This could be due to issues with the search API, network connectivity, or the formatting of results.`;
       }
       
       updateMessage(aiMessageId, {
         text: displayedErrorMessage, 
         type: "error",
         reasoning: finalReasoning,
-        duration: durationInSeconds
+        duration: parseFloat(((Date.now() - startTime) / 1000).toFixed(1))
       });
       toast({
-        title: "Web Search Information", // Changed from "Failed" to be more neutral for "no results"
+        title: "Web Search Information",
         description: baseErrorMessage.includes("Unable to find current information online") ? "No current information found via web search." : "An error occurred during web search.", 
         variant: baseErrorMessage.includes("Unable to find current information online") ? "default" : "destructive",
       });
@@ -537,3 +498,5 @@ export function useChatController() {
     clearChat,
   };
 }
+
+    
