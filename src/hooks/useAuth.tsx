@@ -13,10 +13,9 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const CREATOR_AUTH_KEY = 'creatorLoggedIn';
-// Ensure these are exactly as required.
 const CREATOR_USERNAME = "pannikutty";
-// This is the new SHA-256 hash provided by the user.
-const HASHED_CREATOR_PASSWORD = "d6e8c7a4a4b1a6f7a7f1b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8";
+// This is the SHA-256 hash of the password "Hxp652728"
+const HASHED_CREATOR_PASSWORD = "09b65d20417ab90cdc4fc64ea72f074c83799dd04f62542fb5488c51d4b836e8";
 
 // Helper function to hash a string using SHA-256 (client-side focused)
 async function sha256(str: string): Promise<string> {
@@ -27,9 +26,8 @@ async function sha256(str: string): Promise<string> {
     const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     return hashHex;
   }
-  // Fallback for environments where crypto.subtle is not available
   console.warn('Web Crypto API (window.crypto.subtle) not available for password hashing. Login will likely fail and is not secure.');
-  return str; // Insecure fallback: login will fail if comparing plain text to a hash.
+  return str; 
 }
 
 
@@ -47,33 +45,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const login = useCallback(async (username_input: string, password_input: string): Promise<boolean> => {
-    // Ensure inputs are trimmed directly within this function for robust comparison.
     const trimmedUsername = username_input.trim();
-    const trimmedPassword = password_input.trim();
+    const trimmedPassword = password_input.trim(); // Trim password input as well
 
     const hashed_password_input = await sha256(trimmedPassword);
     
-    // console.log("Attempting login with:");
-    // console.log("Input Username (trimmed):", `"${trimmedUsername}"`);
-    // console.log("Expected Username:", `"${CREATOR_USERNAME}"`);
-    // console.log("Input Password Hash:", `"${hashed_password_input}"`);
-    // console.log("Expected Password Hash:", `"${HASHED_CREATOR_PASSWORD}"`);
+    console.log("Attempting login with:");
+    console.log("Input Username (trimmed):", `"${trimmedUsername}"`);
+    console.log("Expected Username:", `"${CREATOR_USERNAME}"`);
+    console.log("Input Password Hash:", `"${hashed_password_input}"`);
+    console.log("Expected Password Hash:", `"${HASHED_CREATOR_PASSWORD}"`);
 
     const usernameMatch = trimmedUsername === CREATOR_USERNAME;
     const passwordMatch = hashed_password_input === HASHED_CREATOR_PASSWORD;
 
-    // console.log("Username Match:", usernameMatch);
-    // console.log("Password Match:", passwordMatch);
+    console.log("Username Match:", usernameMatch);
+    console.log("Password Match:", passwordMatch);
 
     if (usernameMatch && passwordMatch) {
       if (typeof window !== 'undefined') {
         localStorage.setItem(CREATOR_AUTH_KEY, 'true');
       }
       setIsCreatorLoggedIn(true);
-      // console.log("Login successful");
+      console.log("Login successful");
       return true;
     }
-    // console.log("Login failed");
+    console.log("Login failed");
     return false;
   }, [setIsCreatorLoggedIn]);
 
@@ -101,3 +98,4 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+
