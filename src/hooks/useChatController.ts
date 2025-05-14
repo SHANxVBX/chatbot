@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -9,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 
 const CHAT_STORAGE_KEY = "cyberchat-ai-history";
 const SETTINGS_STORAGE_KEY = "cyberchat-ai-settings";
+const SETTINGS_BROADCAST_CHANNEL_NAME = "cyberchat-ai-settings-channel";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const APP_SITE_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:9002";
@@ -53,15 +53,31 @@ export function useChatController() {
   const [isSearchingWeb, setIsSearchingWeb] = useState(false);
   const { toast } = useToast();
 
+  // Default settings if nothing is in localStorage
+  const hardcodedDefaultSettings: AISettings = {
+    apiKey: "", // This will be overridden by creator settings if they exist in localStorage
+    model: "openrouter/auto",
+    provider: "OpenRouter"
+  };
+
+
   const [settings, setSettings] = useState<AISettings>(() => {
     if (typeof window !== "undefined") {
       const storedSettings = localStorage.getItem(SETTINGS_STORAGE_KEY);
-      return storedSettings
-        ? JSON.parse(storedSettings)
-        : { apiKey: "", model: "openrouter/auto", provider: "OpenRouter" }; // Default to OpenRouter and auto model
+      if (storedSettings) {
+        try {
+          return JSON.parse(storedSettings);
+        } catch (e) {
+          console.error("Failed to parse settings from localStorage, using defaults.", e);
+          return hardcodedDefaultSettings;
+        }
+      }
     }
-    return { apiKey: "", model: "openrouter/auto", provider: "OpenRouter" };
+    return hardcodedDefaultSettings;
   });
+  
+  const [isUpdateFromBroadcast, setIsUpdateFromBroadcast] = useState(false);
+
 
   const getDefaultWelcomeMessage = useCallback((): Message[] => [{
     id: `ai-welcome-${Date.now()}`,
@@ -95,16 +111,57 @@ export function useChatController() {
   }, [getDefaultWelcomeMessage]);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && messages.length > 0 && !(messages.length === 1 && messages[0].id.startsWith('ai-welcome'))) {
+    if (typeof window !== "undefined" && messages.length > 0 && !(messages.length === 1 && messages[0].id.startsWith('ai-welcome-'))) {
       localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
     }
   }, [messages]);
 
+  // Effect for handling BroadcastChannel listener
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.BroadcastChannel) {
+      return;
+    }
+
+    const channel = new BroadcastChannel(SETTINGS_BROADCAST_CHANNEL_NAME);
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'SETTINGS_UPDATE') {
+        const newSettingsFromBroadcast = event.data.payload as AISettings;
+        // Only update if settings are different to prevent potential loops
+        if (JSON.stringify(newSettingsFromBroadcast) !== JSON.stringify(settings)) {
+          console.log('Received settings update from broadcast channel:', newSettingsFromBroadcast);
+          setIsUpdateFromBroadcast(true); // Mark that this update came from broadcast
+          setSettings(newSettingsFromBroadcast);
+        }
+      }
+    };
+
+    channel.addEventListener('message', handleMessage);
+
+    return () => {
+      channel.removeEventListener('message', handleMessage);
+      channel.close();
+    };
+  }, [settings]); // Dependency on settings to re-evaluate closure if settings object reference changes
+
+  // Effect for saving settings to localStorage and broadcasting changes
   useEffect(() => {
     if (typeof window !== "undefined") {
       localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+
+      if (!isUpdateFromBroadcast && window.BroadcastChannel) {
+        // If the change was local (not from a broadcast), then broadcast it
+        const channel = new BroadcastChannel(SETTINGS_BROADCAST_CHANNEL_NAME);
+        console.log('Broadcasting local settings update:', settings);
+        channel.postMessage({ type: 'SETTINGS_UPDATE', payload: settings });
+        channel.close(); // Close after broadcasting
+      } else if (isUpdateFromBroadcast) {
+        // Reset the flag if the update was from a broadcast
+        setIsUpdateFromBroadcast(false);
+      }
     }
-  }, [settings]);
+  }, [settings, isUpdateFromBroadcast]);
+
 
   const addMessage = useCallback((text: string, sender: MessageSender, type?: Message['type'], fileName?: string, filePreviewUri?: string, fileDataUri?: string) => {
     const newMessage: Message = {
@@ -122,6 +179,7 @@ export function useChatController() {
         if (sender === 'user' && newMessage.text.trim() !== "") { 
              return [newMessage];
         }
+        // if it's not a user message or an empty user message, append it to welcome
         return [...prevMessages, newMessage]; 
       }
       return [...prevMessages, newMessage];
@@ -138,12 +196,11 @@ export function useChatController() {
       return prev.map(msg => {
         if (msg.id === id) {
           const currentText = msg.text || "";
-          // Replace if `replace` is true OR if current text is a known placeholder
           const isPlaceholder = replace || 
                                 currentText === "Thinking..." ||
                                 currentText.startsWith("Processing document") || 
                                 currentText.startsWith("Searching the web for") ||
-                                currentText.includes("Now summarizing it for you... 🧐"); // For summarization placeholder
+                                currentText.includes("Now summarizing it for you... 🧐"); 
                                 
           const updatedText = isPlaceholder ? chunk : currentText + chunk;
           return { ...msg, text: updatedText, timestamp: Date.now() };
@@ -157,7 +214,7 @@ export function useChatController() {
     const userMessageText = text || (file ? `Attached: ${file.name}`: "");
     if (!userMessageText.trim() && !file) return; 
 
-    const userMessageId = addMessage(userMessageText, "user", file ? "file_upload_request" : "text", file?.name, file?.type.startsWith("image/") ? file.dataUri : undefined, file?.dataUri);
+    addMessage(userMessageText, "user", file ? "file_upload_request" : "text", file?.name, file?.type.startsWith("image/") ? file.dataUri : undefined, file?.dataUri);
     setIsLoading(true);
     
     const startTime = Date.now();
@@ -181,7 +238,7 @@ export function useChatController() {
       try {
         const apiMessageHistory = messages
           .filter(msg => msg.sender !== 'system' && msg.id !== aiMessageId && !msg.id.startsWith('ai-welcome-'))
-          .slice(-10)
+          .slice(-10) // Keep last 10 messages for context
           .map(msg => {
             const role = msg.sender === 'user' ? 'user' : 'assistant';
             let content: any = msg.text;
@@ -189,6 +246,7 @@ export function useChatController() {
               content = [{ type: 'text', text: msg.text || "Image attached" }];
               content.push({ type: 'image_url', image_url: { url: msg.fileDataUri } });
             } else if (msg.sender === 'user' && msg.fileDataUri) {
+              // For non-image files, describe the upload in text
               content = `User uploaded a file: ${msg.fileName}. User's message: ${msg.text}`;
             }
             return { role, content };
@@ -201,6 +259,7 @@ export function useChatController() {
                 { type: 'image_url', image_url: { url: file.dataUri } }
             ];
         } else if (file) {
+            // For non-image files sent with current message
             currentUserMessageForAPI.content = `User uploaded a file: ${file.name}. User's message: ${text}`;
         }
 
@@ -212,13 +271,19 @@ export function useChatController() {
             currentUserMessageForAPI
           ],
           stream: true,
-          http_referer: APP_SITE_URL,
-          x_title: APP_TITLE,
+          http_referer: APP_SITE_URL, // Optional, for OpenRouter analytics
+          // site_url: APP_SITE_URL, // Alternative for some models
+          x_title: APP_TITLE, // Optional, for OpenRouter analytics
         };
 
         const response = await fetch(OPENROUTER_API_URL, {
           method: "POST",
-          headers: { "Authorization": `Bearer ${settings.apiKey}`, "Content-Type": "application/json", "HTTP-Referer": APP_SITE_URL, "X-Title": APP_TITLE },
+          headers: {
+            "Authorization": `Bearer ${settings.apiKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": APP_SITE_URL, // Recommended by OpenRouter
+            "X-Title": APP_TITLE, // Recommended by OpenRouter
+          },
           body: JSON.stringify(initialPayload),
         });
 
@@ -253,27 +318,32 @@ export function useChatController() {
                           accumulatedText += contentChunk;
                           isFirstChunkOfInitialResponse = false;
                       } else if (chunkData.choices && chunkData.choices[0].finish_reason) {
+                          // Handle finish reasons like 'stop', 'length', etc.
                           if(chunkData.choices[0].finish_reason === 'stop' || chunkData.choices[0].finish_reason === 'length') { 
+                            // Stream is effectively complete for content.
                             if (reader) await reader.cancel(); reader = null; break; 
                           }
                       }
-                  } catch (e) { console.error("Error parsing stream JSON:", jsonData, e); }
+                  } catch (e) {
+                      console.error("Error parsing stream JSON:", jsonData, e);
+                  }
               }
           }
-          if (reader === null) break;
+          if (reader === null) break; // Exit outer while if reader was cancelled and set to null
         }
         finalAiTextForDisplay = accumulatedText;
 
-        // Uncertainty check and potential second AI call
         const lowercasedAiText = accumulatedText.toLowerCase();
         const isUncertain = uncertaintyPhrases.some(phrase => lowercasedAiText.includes(phrase));
 
-        if (isUncertain && !file) {
+        if (isUncertain && !file) { // Don't trigger web search if a file was the primary input
           setIsSearchingWeb(true);
           messageType = 'search_result';
           finalReasoning += " Detected uncertainty in the initial response.";
-          const queryForSearch = refineSearchQueryForContext(userMessageText, messages);
+          // Refine search query based on current user message and chat history
+          const queryForSearch = refineSearchQueryForContext(userMessageText, messages.filter(m => m.id !== aiMessageId));
           
+          // Update AI message to indicate web search is happening
           updateMessage(aiMessageId, { text: accumulatedText + `\n\nAttempting to find more information online for "${queryForSearch}"... 🌐` });
 
           const searchFlowResult = await smartWebSearch({ query: queryForSearch });
@@ -281,11 +351,13 @@ export function useChatController() {
           
           finalReasoning += ` Web search for "${queryForSearch}" was performed.`;
 
+          // Check if actual web results were found (not error/no-results messages)
           const isActualWebResult = searchResultsMarkdownContent && !searchResultsMarkdownContent.toLowerCase().includes("unable to find current information") && !searchResultsMarkdownContent.toLowerCase().includes("an error occurred while searching");
 
           if (isActualWebResult) {
             updateMessage(aiMessageId, { text: accumulatedText + `\n\nFound information online for "${queryForSearch}". Now summarizing it for you... 🧐` });
             
+            // Prepare messages for summarization call
             const summarizationApiMessages = [
               { role: "system", content: `You are CyberChat AI. The user asked: "${userMessageText}". You previously responded with some uncertainty. Web search results related to "${queryForSearch}" are provided below. Please synthesize this information to provide a comprehensive answer to the user's original question. If the search results are irrelevant, state that and try to answer from your general knowledge if possible, or indicate you still cannot provide a definitive answer. Format your response using basic markdown and friendly emojis.` },
               ...apiMessageHistory, // Original history
@@ -338,13 +410,15 @@ export function useChatController() {
               finalAiTextForDisplay = summarizedText;
               finalReasoning += " The AI then processed these web search results and incorporated them into its final answer.";
             } else {
+              // If summarization yielded no text, use the original uncertain AI text + search results
               finalAiTextForDisplay = accumulatedText + `\n\nI found some information online, but had trouble summarizing it.`;
               finalReasoning += " The summarization process did not yield content.";
             }
+            // Append the raw search results in a collapsible section
             finalAiTextForDisplay += `\n\n:::collapsible Web Search Results for "${queryForSearch}"\n${searchResultsMarkdownContent}\n:::`;
 
           } else { // Web search failed or no relevant results
-            finalReasoning += ` Web search for "${queryForSearch}" did not yield usable results: "${searchResultsMarkdownContent || 'Internal search error'}".`;
+            finalReasoning += ` Web search for "${queryForSearch}" did not yield usable results: "${searchResultsMarkdownContent || 'Internal search error'}". The original uncertain response will be shown.`;
             finalAiTextForDisplay = accumulatedText + `\n\n${searchResultsMarkdownContent || 'Could not perform web search due to an internal error.'}`;
           }
           setIsSearchingWeb(false);
@@ -367,16 +441,18 @@ export function useChatController() {
     const endTime = Date.now();
     const durationInSeconds = parseFloat(((endTime - startTime) / 1000).toFixed(1));
 
+    // Final update to the AI message with all content
     setMessages(prev => {
       return prev.map(msg => {
         if (msg.id === aiMessageId) {
           let textToSet = finalAiTextForDisplay;
+          // If for some reason text is empty and it's not an error message, provide a fallback.
           if (!textToSet.trim() && messageType !== 'error') {
             textToSet = "No response generated, or an issue occurred. Please check settings.";
             if (finalReasoning === "The AI processed the input, considered relevant information from its knowledge base and the conversation history, and generated the most appropriate response according to its programming and the provided context.") {
               finalReasoning = "The AI service did not return a valid response or the response was empty.";
             }
-            messageType = 'error';
+            messageType = 'error'; // Mark as error if no text but not already error
           }
           return { ...msg, text: textToSet, reasoning: finalReasoning, duration: durationInSeconds, type: messageType };
         }
@@ -405,6 +481,9 @@ export function useChatController() {
         reasoning: finalReasoning,
         duration: parseFloat(((Date.now() - startTime) / 1000).toFixed(1)),
         fileName: fileName,
+        // Potentially add filePreviewUri if it's an image and summarization is for image content
+        filePreviewUri: fileType.startsWith("image/") ? fileDataUri : undefined, 
+        fileDataUri: fileDataUri // Store for potential future use, though Genkit flow consumed it
       });
       toast({ title: "Summary Complete", description: `${fileName} has been summarized.` });
     } catch (error) {
@@ -425,7 +504,7 @@ export function useChatController() {
   };
 
   const handleWebSearch = async (query: string) => {
-    addMessage(`Initiating web search for: "${query}"`, "user", "text");
+    addMessage(`Initiating web search for: "${query}"`, "user", "text"); // Use addMessage for consistency
     setIsSearchingWeb(true); 
     setIsLoading(true); 
     const startTime = Date.now();
@@ -435,7 +514,7 @@ export function useChatController() {
 
     try {
       const result = await smartWebSearch({ query });
-      finalReasoning = `The AI initiated a web search for "${query}", retrieved relevant snippets from search results using an external API (DuckDuckGo), and then formatted this information.`;
+      finalReasoning = `The AI initiated a web search for "${query}", retrieved relevant snippets from search results using an external API (DuckDuckGo), and then formatted this information. No further AI summarization was applied in this direct search action.`;
       const collapsibleContent = result.searchResultsMarkdown;
       const fullText = `Web search results for "${query}":\n\n:::collapsible Web Search Results for "${query}"\n${collapsibleContent}\n:::`;
 
@@ -452,10 +531,12 @@ export function useChatController() {
       if (!baseErrorMessage.endsWith('.')) displayedErrorMessage += '.';
       
       if (baseErrorMessage.includes("Unable to find current information online") || baseErrorMessage.includes("No relevant information found online")) {
+          // This specific message comes from smartWebSearchFlow if no results
           displayedErrorMessage = "Unable to find current information online. Please check a reliable news source.";
           finalReasoning = `The web search for "${query}" did not yield relevant results based on the filtering criteria. The external API may not have found matching content or the content did not meet recency/keyword requirements.`;
       } else {
-          displayedErrorMessage = `An error occurred while searching online.`;
+          // General error
+          displayedErrorMessage = `An error occurred while searching online.`; // More generic for UI
           finalReasoning = `An error occurred while performing the web search for "${query}". The specific error was: "${baseErrorMessage}". This could be due to issues with the search API, network connectivity, or the formatting of results.`;
       }
       
@@ -491,12 +572,10 @@ export function useChatController() {
     isLoading,
     isSearchingWeb,
     currentAIMessageId,
-    setSettings,
+    setSettings, // This is now the function that will trigger broadcast if settings change
     handleSendMessage,
     handleFileUpload,
     handleWebSearch,
     clearChat,
   };
 }
-
-    
