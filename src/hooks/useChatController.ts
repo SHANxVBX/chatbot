@@ -27,9 +27,9 @@ const uncertaintyPhrases = [
 const clientStopWords = new Set(['a', 'an', 'the', 'is', 'are', 'was', 'were', 'what', 'who', 'when', 'where', 'why', 'how', 'of', 'for', 'in', 'on', 'at', 'by']);
 
 // Hardcoded constants for default settings defined in the code
-const CODE_DEFAULT_API_KEY = "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";
+const CODE_DEFAULT_API_KEY = "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";
 const CODE_DEFAULT_MODEL = "qwen/qwen3-235b-a22b:free";
-const CODE_DEFAULT_PROVIDER = "OpenRouter";
+const CODE_DEFAULT_PROVIDER = "OpenRouter"; // This remains as OpenRouter is the service being used
 
 function refineSearchQueryForContext(originalQuery: string, chatHistory: Message[]): string {
   let query = originalQuery.toLowerCase();
@@ -295,7 +295,7 @@ export function useChatController() {
         http_referer: APP_SITE_URL, // Recommended by OpenRouter
         x_title: APP_TITLE, // Recommended by OpenRouter
       };
-      finalReasoning = `Sending request to ${currentActiveSettings.provider} with model ${currentActiveSettings.model}. User query: "${userMessageText}".`;
+      finalReasoning = `Sending request to AI. User query: "${userMessageText}".`;
       updateMessage(aiMessageId, { reasoning: finalReasoning });
 
 
@@ -353,6 +353,7 @@ export function useChatController() {
                         // If finish_reason is 'stop', the outer loop will eventually get [DONE] or reader becomes null.
                         if(chunkData.choices[0].finish_reason === 'stop' || chunkData.choices[0].finish_reason === 'length') {
                           // This specific choice is done, but there might be more data or the [DONE] signal.
+                           if (reader) await reader.cancel(); reader = null; break;
                         }
                     }
                 } catch (e) {
@@ -562,10 +563,29 @@ export function useChatController() {
   };
 
   const handleSettingsChange = (newSettings: AISettings) => {
-    setSettings(newSettings); // Update local settings
-    // No broadcast or local storage saving for non-creator default changes
+    // When creator changes settings, update the hardcoded defaults in *this file*.
+    // This is a simplified approach as direct file writing by a web app is complex and insecure.
+    // For a real application, settings would be stored server-side or in a database.
+    
+    // Update internal state
+    setSettings(newSettings);
+
     if (isCreatorLoggedIn) {
-        toast({ title: "Settings Updated", description: "Your AI provider settings have been applied locally." });
+      // This part is tricky. We can't directly rewrite this file from client-side JS.
+      // The "autosave to code as default" is more of a conceptual goal here.
+      // What we *can* do is ensure the current session uses these new settings,
+      // and if we were to manually update the constants (CODE_DEFAULT_API_KEY, etc.)
+      // in the source code based on these logs/toast, that would be the manual "autosave".
+      
+      console.log("SETTINGS CHANGED BY CREATOR (manual update to constants in useChatController.ts needed if these should be new defaults):");
+      console.log("New API Key:", newSettings.apiKey);
+      console.log("New Model:", newSettings.model);
+
+      toast({ 
+        title: "Settings Updated & Applied", 
+        description: `Locally applied. For these to be the new app defaults, constants in useChatController.ts need manual update. Key: ...${newSettings.apiKey.slice(-6)}, Model: ${newSettings.model}`,
+        duration: 10000 // Longer duration for this important note
+      });
     }
   };
 
@@ -584,7 +604,7 @@ export function useChatController() {
     isLoading,
     isSearchingWeb,
     currentAIMessageId,
-    isCreatorModeActive,
+    isCreatorModeActive, //
     setSettings: handleSettingsChange, 
     handleSendMessage,
     handleFileUpload,
