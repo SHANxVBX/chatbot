@@ -20,14 +20,14 @@ export function ChatMessageList({ messages, isLoading, currentAIMessageId }: Cha
     if (viewportRef.current) {
       viewportRef.current.scrollTo({ top: viewportRef.current.scrollHeight, behavior: "smooth" });
     }
-  }, [messages, isLoading]);
+  }, [messages, isLoading, currentAIMessageId]); // Added currentAIMessageId to dependencies
 
   if (messages.length === 0 && !isLoading) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center text-center p-8 bg-background/30 rounded-lg m-4 border border-dashed border-border/50">
-        <MessageSquareDashed className="h-16 w-16 text-primary/50 mb-4" />
-        <h2 className="text-2xl font-semibold text-foreground/80 mb-2">Start Your Cyber-Dialogue</h2>
-        <p className="text-muted-foreground max-w-md">
+      <div className="flex flex-1 flex-col items-center justify-center text-center p-4 sm:p-6 md:p-8 bg-background/30 rounded-lg m-2 sm:m-3 md:m-4 border border-dashed border-border/50">
+        <MessageSquareDashed className="h-12 w-12 sm:h-16 sm:w-16 text-primary/50 mb-3 sm:mb-4" />
+        <h2 className="text-xl sm:text-2xl font-semibold text-foreground/80 mb-1 sm:mb-2">Start Your Cyber-Dialogue</h2>
+        <p className="text-sm sm:text-base text-muted-foreground max-w-sm sm:max-w-md">
           Type your query or command below, upload a document, or initiate a web search using the tools in the sidebar. The AI awaits your transmission.
         </p>
       </div>
@@ -42,7 +42,7 @@ export function ChatMessageList({ messages, isLoading, currentAIMessageId }: Cha
         ))}
         {isLoading && !currentAIMessageId && ( // General loading state if no specific AI message is being typed
            <div className="flex justify-start items-start gap-3 my-3 md:my-4">
-             <Bot className="h-10 w-10 text-primary flex-shrink-0 p-1.5 border-2 border-primary/50 rounded-full shadow-md bg-gradient-to-br from-primary/30 to-secondary/30" />
+             <Bot className="h-8 w-8 md:h-10 md:w-10 text-primary flex-shrink-0 p-1.5 border-2 border-primary/50 rounded-full shadow-md bg-gradient-to-br from-primary/30 to-secondary/30" />
              <div className="max-w-[70%] md:max-w-[65%] rounded-xl shadow-lg bg-card/80 text-card-foreground rounded-bl-none glassmorphic p-3">
                 <div className="flex space-x-1 animate-pulse">
                     <div className="w-2 h-2 bg-primary/70 rounded-full"></div>

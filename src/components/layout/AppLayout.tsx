@@ -34,7 +34,7 @@ export function AppLayout() {
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className="flex min-h-screen w-full flex-col bg-gradient-to-br from-background to-muted/30">
+      <div className="flex h-screen w-full flex-col overflow-hidden bg-gradient-to-br from-background to-muted/30">
         <AppHeader />
         <div className="flex flex-1 overflow-hidden">
           <AppSidebar
