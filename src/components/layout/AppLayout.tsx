@@ -1,3 +1,4 @@
+
 "use client"; // Make this a client component to manage state via useChatController
 
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -15,6 +16,7 @@ export function AppLayout() {
     isLoading,
     isSearchingWeb,
     currentAIMessageId,
+    isCreatorModeActive,
     setSettings,
     handleSendMessage,
     handleFileUpload,
@@ -34,9 +36,9 @@ export function AppLayout() {
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className="flex h-screen w-full flex-col overflow-hidden bg-gradient-to-br from-background to-muted/30">
+      <div className="flex h-screen w-full flex-col bg-gradient-to-br from-background to-muted/30">
         <AppHeader />
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden"> {/* This div handles overflow for content below header */}
           <AppSidebar
             settings={settings}
             onSettingsChange={setSettings}
@@ -55,3 +57,4 @@ export function AppLayout() {
     </SidebarProvider>
   );
 }
+
