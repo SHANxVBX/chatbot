@@ -9,6 +9,8 @@ export interface Message {
   fileName?: string;
   fileDataUri?: string; // For sending to AI flow
   filePreviewUri?: string; // For displaying image previews
+  reasoning?: string; // To store AI's thought process
+  duration?: number; // To store duration of AI thought process in seconds
 }
 
 export interface AISettings {
