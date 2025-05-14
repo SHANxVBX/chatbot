@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -5,6 +6,7 @@ import type { Message, AISettings, MessageSender } from "@/lib/types";
 import { summarizeUpload } from "@/ai/flows/summarize-upload";
 import { smartWebSearch } from "@/ai/flows/smart-web-search";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth"; // Added import
 
 const CHAT_STORAGE_KEY = "cyberchat-ai-history";
 const SETTINGS_STORAGE_KEY = "cyberchat-ai-settings";
@@ -52,13 +54,14 @@ export function useChatController() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSearchingWeb, setIsSearchingWeb] = useState(false);
   const { toast } = useToast();
+  const { isCreatorLoggedIn } = useAuth(); // Get creator login status
 
   // Default settings if nothing is in localStorage
-  const hardcodedDefaultSettings: AISettings = {
+  const [hardcodedDefaultSettings, setHardcodedDefaultSettings] = useState<AISettings>({
     apiKey: "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", 
     model: "qwen/qwen3-235b-a22b:free",
     provider: "OpenRouter"
-  };
+  });
 
 
   const [settings, setSettings] = useState<AISettings>(() => {
@@ -67,18 +70,17 @@ export function useChatController() {
       if (storedSettings) {
         try {
           const parsedSettings = JSON.parse(storedSettings);
-          // Ensure API key is present, if not, use the hardcoded default.
-          // This handles cases where old settings might be stored without an API key.
-          if (!parsedSettings.apiKey || parsedSettings.apiKey.trim() === "") {
-            return { ...parsedSettings, apiKey: hardcodedDefaultSettings.apiKey };
-          }
-          return parsedSettings;
+          // This ensures that if new default fields are added to hardcodedDefaultSettings,
+          // they are merged with what's in localStorage.
+          return { ...hardcodedDefaultSettings, ...parsedSettings };
         } catch (e) {
           console.error("Failed to parse settings from localStorage, using defaults.", e);
+          // Fallback to initial hardcodedDefaultSettings state if parsing fails
           return hardcodedDefaultSettings;
         }
       }
     }
+     // Fallback to initial hardcodedDefaultSettings state if no stored settings
     return hardcodedDefaultSettings;
   });
   
@@ -134,10 +136,14 @@ export function useChatController() {
       if (event.data && event.data.type === 'SETTINGS_UPDATE') {
         const newSettingsFromBroadcast = event.data.payload as AISettings;
         // Only update if settings are different to prevent potential loops
+        // And also update hardcodedDefaultSettings if this is coming from a creator
+        // This logic implies creator settings become the new "defaults" for others
         if (JSON.stringify(newSettingsFromBroadcast) !== JSON.stringify(settings)) {
           console.log('Received settings update from broadcast channel:', newSettingsFromBroadcast);
           setIsUpdateFromBroadcast(true); // Mark that this update came from broadcast
           setSettings(newSettingsFromBroadcast);
+          // If the broadcasted settings are considered the new defaults for all users
+          setHardcodedDefaultSettings(newSettingsFromBroadcast); 
         }
       }
     };
@@ -148,27 +154,29 @@ export function useChatController() {
       channel.removeEventListener('message', handleMessage);
       channel.close();
     };
-  }, [settings]); // Dependency on settings to re-evaluate closure if settings object reference changes
+  }, [settings]); // Dependency on settings to re-evaluate closure
 
   // Effect for saving settings to localStorage and broadcasting changes
   useEffect(() => {
     if (typeof window !== "undefined") {
-      // Always save the current settings, which might include the hardcoded defaults if nothing was loaded
-      const settingsToSave = { ...hardcodedDefaultSettings, ...settings };
-      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settingsToSave));
+      // Save current settings to localStorage.
+      // These settings could be from initial load, creator modification, or broadcast update.
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
 
-      if (!isUpdateFromBroadcast && window.BroadcastChannel) {
-        // If the change was local (not from a broadcast), then broadcast it
+      if (!isUpdateFromBroadcast && isCreatorLoggedIn && window.BroadcastChannel) {
+        // If the change was local, made by a logged-in creator, then broadcast it
         const channel = new BroadcastChannel(SETTINGS_BROADCAST_CHANNEL_NAME);
-        console.log('Broadcasting local settings update:', settingsToSave);
-        channel.postMessage({ type: 'SETTINGS_UPDATE', payload: settingsToSave });
-        channel.close(); // Close after broadcasting
-      } else if (isUpdateFromBroadcast) {
-        // Reset the flag if the update was from a broadcast
+        console.log('Creator broadcasting local settings update:', settings);
+        channel.postMessage({ type: 'SETTINGS_UPDATE', payload: settings });
+        channel.close(); 
+      }
+      
+      // Reset the flag after processing
+      if (isUpdateFromBroadcast) {
         setIsUpdateFromBroadcast(false);
       }
     }
-  }, [settings, isUpdateFromBroadcast, hardcodedDefaultSettings]);
+  }, [settings, isUpdateFromBroadcast, isCreatorLoggedIn]);
 
 
   const addMessage = useCallback((text: string, sender: MessageSender, type?: Message['type'], fileName?: string, filePreviewUri?: string, fileDataUri?: string) => {
@@ -187,7 +195,6 @@ export function useChatController() {
         if (sender === 'user' && newMessage.text.trim() !== "") { 
              return [newMessage];
         }
-        // if it's not a user message or an empty user message, append it to welcome
         return [...prevMessages, newMessage]; 
       }
       return [...prevMessages, newMessage];
@@ -233,8 +240,8 @@ export function useChatController() {
     let finalReasoning = "The AI processed the input, considered relevant information from its knowledge base and the conversation history, and generated the most appropriate response according to its programming and the provided context.";
     let messageType: Message['type'] = 'text';
     
-    // Use the current settings, which will include hardcoded defaults if not overridden by creator
-    const currentSettings = { ...hardcodedDefaultSettings, ...settings };
+    // Use the current settings, which will be from localStorage or the latest broadcast/creator update
+    const currentSettings = settings;
 
 
     if (!currentSettings.apiKey || currentSettings.apiKey.trim() === "") {
@@ -250,7 +257,7 @@ export function useChatController() {
       try {
         const apiMessageHistory = messages
           .filter(msg => msg.sender !== 'system' && msg.id !== aiMessageId && !msg.id.startsWith('ai-welcome-'))
-          .slice(-10) // Keep last 10 messages for context
+          .slice(-10) 
           .map(msg => {
             const role = msg.sender === 'user' ? 'user' : 'assistant';
             let content: any = msg.text;
@@ -258,7 +265,6 @@ export function useChatController() {
               content = [{ type: 'text', text: msg.text || "Image attached" }];
               content.push({ type: 'image_url', image_url: { url: msg.fileDataUri } });
             } else if (msg.sender === 'user' && msg.fileDataUri) {
-              // For non-image files, describe the upload in text
               content = `User uploaded a file: ${msg.fileName}. User's message: ${msg.text}`;
             }
             return { role, content };
@@ -271,7 +277,6 @@ export function useChatController() {
                 { type: 'image_url', image_url: { url: file.dataUri } }
             ];
         } else if (file) {
-            // For non-image files sent with current message
             currentUserMessageForAPI.content = `User uploaded a file: ${file.name}. User's message: ${text}`;
         }
 
@@ -283,9 +288,8 @@ export function useChatController() {
             currentUserMessageForAPI
           ],
           stream: true,
-          http_referer: APP_SITE_URL, // Optional, for OpenRouter analytics
-          // site_url: APP_SITE_URL, // Alternative for some models
-          x_title: APP_TITLE, // Optional, for OpenRouter analytics
+          http_referer: APP_SITE_URL, 
+          x_title: APP_TITLE, 
         };
 
         const response = await fetch(OPENROUTER_API_URL, {
@@ -293,8 +297,8 @@ export function useChatController() {
           headers: {
             "Authorization": `Bearer ${currentSettings.apiKey}`,
             "Content-Type": "application/json",
-            "HTTP-Referer": APP_SITE_URL, // Recommended by OpenRouter
-            "X-Title": APP_TITLE, // Recommended by OpenRouter
+            "HTTP-Referer": APP_SITE_URL, 
+            "X-Title": APP_TITLE, 
           },
           body: JSON.stringify(initialPayload),
         });
@@ -309,7 +313,6 @@ export function useChatController() {
         const decoder = new TextDecoder();
         let buffer = "";
         
-        // eslint-disable-next-line no-constant-condition
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -330,9 +333,7 @@ export function useChatController() {
                           accumulatedText += contentChunk;
                           isFirstChunkOfInitialResponse = false;
                       } else if (chunkData.choices && chunkData.choices[0].finish_reason) {
-                          // Handle finish reasons like 'stop', 'length', etc.
                           if(chunkData.choices[0].finish_reason === 'stop' || chunkData.choices[0].finish_reason === 'length') { 
-                            // Stream is effectively complete for content.
                             if (reader) await reader.cancel(); reader = null; break; 
                           }
                       }
@@ -341,21 +342,19 @@ export function useChatController() {
                   }
               }
           }
-          if (reader === null) break; // Exit outer while if reader was cancelled and set to null
+          if (reader === null) break; 
         }
         finalAiTextForDisplay = accumulatedText;
 
         const lowercasedAiText = accumulatedText.toLowerCase();
         const isUncertain = uncertaintyPhrases.some(phrase => lowercasedAiText.includes(phrase));
 
-        if (isUncertain && !file) { // Don't trigger web search if a file was the primary input
+        if (isCreatorLoggedIn && isUncertain && !file) { 
           setIsSearchingWeb(true);
           messageType = 'search_result';
           finalReasoning += " Detected uncertainty in the initial response.";
-          // Refine search query based on current user message and chat history
           const queryForSearch = refineSearchQueryForContext(userMessageText, messages.filter(m => m.id !== aiMessageId));
           
-          // Update AI message to indicate web search is happening
           updateMessage(aiMessageId, { text: accumulatedText + `\n\nAttempting to find more information online for "${queryForSearch}"... 🌐` });
 
           const searchFlowResult = await smartWebSearch({ query: queryForSearch });
@@ -363,19 +362,17 @@ export function useChatController() {
           
           finalReasoning += ` Web search for "${queryForSearch}" was performed.`;
 
-          // Check if actual web results were found (not error/no-results messages)
           const isActualWebResult = searchResultsMarkdownContent && !searchResultsMarkdownContent.toLowerCase().includes("unable to find current information") && !searchResultsMarkdownContent.toLowerCase().includes("an error occurred while searching");
 
           if (isActualWebResult) {
             updateMessage(aiMessageId, { text: accumulatedText + `\n\nFound information online for "${queryForSearch}". Now summarizing it for you... 🧐` });
             
-            // Prepare messages for summarization call
             const summarizationApiMessages = [
               { role: "system", content: `You are CyberChat AI. The user asked: "${userMessageText}". You previously responded with some uncertainty. Web search results related to "${queryForSearch}" are provided below. Please synthesize this information to provide a comprehensive answer to the user's original question. If the search results are irrelevant, state that and try to answer from your general knowledge if possible, or indicate you still cannot provide a definitive answer. Format your response using basic markdown and friendly emojis.` },
-              ...apiMessageHistory, // Original history
-              { role: "user", content: userMessageText }, // Original user query
+              ...apiMessageHistory, 
+              { role: "user", content: userMessageText }, 
               { role: "assistant", content: `Context from web search about "${queryForSearch}":\n${searchResultsMarkdownContent}` },
-              { role: "user", content: `Based on the web search results provided, please answer my original question: "${userMessageText}"` } // Re-iterate to focus AI
+              { role: "user", content: `Based on the web search results provided, please answer my original question: "${userMessageText}"` } 
             ];
 
             const summarizationPayload = { model: currentSettings.model, messages: summarizationApiMessages, stream: true, http_referer: APP_SITE_URL, x_title: APP_TITLE };
@@ -384,12 +381,11 @@ export function useChatController() {
             if (!summarizationResponse.ok) throw new Error(`Summarization API Error: ${summarizationResponse.status}`);
             if (!summarizationResponse.body) throw new Error("Summarization response body is null.");
 
-            reader = summarizationResponse.body.getReader(); // Re-assign reader for the new stream
+            reader = summarizationResponse.body.getReader(); 
             let summarizedText = "";
             let isFirstSummaryChunk = true;
-            buffer = ""; // Reset buffer for new stream
+            buffer = ""; 
 
-            // eslint-disable-next-line no-constant-condition
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
@@ -406,7 +402,7 @@ export function useChatController() {
                           const chunkData = JSON.parse(jsonData);
                           if (chunkData.choices && chunkData.choices[0].delta && chunkData.choices[0].delta.content) {
                               const contentChunk = chunkData.choices[0].delta.content;
-                              streamMessageUpdate(aiMessageId, contentChunk, isFirstSummaryChunk); // Replace "Now summarizing..."
+                              streamMessageUpdate(aiMessageId, contentChunk, isFirstSummaryChunk); 
                               summarizedText += contentChunk;
                               isFirstSummaryChunk = false;
                           } else if (chunkData.choices && chunkData.choices[0].finish_reason === 'stop') {
@@ -422,14 +418,12 @@ export function useChatController() {
               finalAiTextForDisplay = summarizedText;
               finalReasoning += " The AI then processed these web search results and incorporated them into its final answer.";
             } else {
-              // If summarization yielded no text, use the original uncertain AI text + search results
               finalAiTextForDisplay = accumulatedText + `\n\nI found some information online, but had trouble summarizing it.`;
               finalReasoning += " The summarization process did not yield content.";
             }
-            // Append the raw search results in a collapsible section
             finalAiTextForDisplay += `\n\n:::collapsible Web Search Results for "${queryForSearch}"\n${searchResultsMarkdownContent}\n:::`;
 
-          } else { // Web search failed or no relevant results
+          } else { 
             finalReasoning += ` Web search for "${queryForSearch}" did not yield usable results: "${searchResultsMarkdownContent || 'Internal search error'}". The original uncertain response will be shown.`;
             finalAiTextForDisplay = accumulatedText + `\n\n${searchResultsMarkdownContent || 'Could not perform web search due to an internal error.'}`;
           }
@@ -453,18 +447,16 @@ export function useChatController() {
     const endTime = Date.now();
     const durationInSeconds = parseFloat(((endTime - startTime) / 1000).toFixed(1));
 
-    // Final update to the AI message with all content
     setMessages(prev => {
       return prev.map(msg => {
         if (msg.id === aiMessageId) {
           let textToSet = finalAiTextForDisplay;
-          // If for some reason text is empty and it's not an error message, provide a fallback.
           if (!textToSet.trim() && messageType !== 'error') {
             textToSet = "No response generated, or an issue occurred. Please check settings.";
             if (finalReasoning === "The AI processed the input, considered relevant information from its knowledge base and the conversation history, and generated the most appropriate response according to its programming and the provided context.") {
               finalReasoning = "The AI service did not return a valid response or the response was empty.";
             }
-            messageType = 'error'; // Mark as error if no text but not already error
+            messageType = 'error'; 
           }
           return { ...msg, text: textToSet, reasoning: finalReasoning, duration: durationInSeconds, type: messageType };
         }
@@ -493,9 +485,8 @@ export function useChatController() {
         reasoning: finalReasoning,
         duration: parseFloat(((Date.now() - startTime) / 1000).toFixed(1)),
         fileName: fileName,
-        // Potentially add filePreviewUri if it's an image and summarization is for image content
         filePreviewUri: fileType.startsWith("image/") ? fileDataUri : undefined, 
-        fileDataUri: fileDataUri // Store for potential future use, though Genkit flow consumed it
+        fileDataUri: fileDataUri 
       });
       toast({ title: "Summary Complete", description: `${fileName} has been summarized.` });
     } catch (error) {
@@ -516,7 +507,16 @@ export function useChatController() {
   };
 
   const handleWebSearch = async (query: string) => {
-    addMessage(`Initiating web search for: "${query}"`, "user", "text"); // Use addMessage for consistency
+    if (!isCreatorLoggedIn) {
+      toast({
+        title: "Access Denied",
+        description: "Web search feature is available for creators only.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    addMessage(`Initiating web search for: "${query}"`, "user", "text"); 
     setIsSearchingWeb(true); 
     setIsLoading(true); 
     const startTime = Date.now();
@@ -543,12 +543,10 @@ export function useChatController() {
       if (!baseErrorMessage.endsWith('.')) displayedErrorMessage += '.';
       
       if (baseErrorMessage.includes("Unable to find current information online") || baseErrorMessage.includes("No relevant information found online")) {
-          // This specific message comes from smartWebSearchFlow if no results
           displayedErrorMessage = "Unable to find current information online. Please check a reliable news source.";
           finalReasoning = `The web search for "${query}" did not yield relevant results based on the filtering criteria. The external API may not have found matching content or the content did not meet recency/keyword requirements.`;
       } else {
-          // General error
-          displayedErrorMessage = `An error occurred while searching online.`; // More generic for UI
+          displayedErrorMessage = `An error occurred while searching online.`; 
           finalReasoning = `An error occurred while performing the web search for "${query}". The specific error was: "${baseErrorMessage}". This could be due to issues with the search API, network connectivity, or the formatting of results.`;
       }
       
@@ -580,11 +578,11 @@ export function useChatController() {
 
   return {
     messages,
-    settings, // This now returns the merged settings (localStorage or hardcoded)
+    settings, 
     isLoading,
     isSearchingWeb,
     currentAIMessageId,
-    setSettings, // This is the function that will trigger broadcast if settings change
+    setSettings, 
     handleSendMessage,
     handleFileUpload,
     handleWebSearch,

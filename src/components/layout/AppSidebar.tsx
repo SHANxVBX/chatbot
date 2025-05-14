@@ -9,7 +9,8 @@ import { FileUploadView } from "@/components/sidebar/FileUploadView";
 import { WebSearchView } from "@/components/sidebar/WebSearchView";
 import { CyberLogoIcon } from "@/components/icons/CyberLogoIcon";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Cog, UploadCloud, Globe, History, ChevronRight } from 'lucide-react'; // Changed DatabaseZap to Cog
+import { Cog, UploadCloud, Globe, History, ChevronRight } from 'lucide-react';
+import { useAuth } from "@/hooks/useAuth"; // Added import
 
 interface AppSidebarProps {
   settings: AISettings;
@@ -30,6 +31,8 @@ export function AppSidebar({
   chatHistory = [],
   onSelectChat,
 }: AppSidebarProps) {
+  const { isCreatorLoggedIn } = useAuth(); // Get creator login status
+
   return (
     <Sidebar side="left" variant="sidebar" collapsible="icon" className="glassmorphic-sidebar border-r-0 md:border-r">
       <SidebarHeader className="p-4 border-b border-sidebar-border/50">
@@ -54,7 +57,9 @@ export function AppSidebar({
               <AccordionContent className="pt-0 pb-2 group-data-[collapsible=icon]:hidden">
                 <div className="space-y-2 px-2">
                   <FileUploadView onFileUpload={onFileUpload} />
-                  <WebSearchView onWebSearch={onWebSearch} isSearching={isSearchingWeb} />
+                  {isCreatorLoggedIn && ( // Conditionally render WebSearchView
+                    <WebSearchView onWebSearch={onWebSearch} isSearching={isSearchingWeb} />
+                  )}
                 </div>
               </AccordionContent>
             </AccordionItem>
@@ -62,7 +67,7 @@ export function AppSidebar({
             <AccordionItem value="settings" className="border-b-0">
                <AccordionTrigger className="px-4 py-3 text-sm font-medium hover:no-underline hover:bg-sidebar-accent group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:py-2">
                  <div className="flex items-center gap-2">
-                    <Cog className="h-4 w-4 text-primary group-data-[collapsible=icon]:h-5 group-data-[collapsible=icon]:w-5" /> {/* Changed icon */}
+                    <Cog className="h-4 w-4 text-primary group-data-[collapsible=icon]:h-5 group-data-[collapsible=icon]:w-5" />
                     <span className="group-data-[collapsible=icon]:hidden">Settings</span>
                  </div>
                </AccordionTrigger>
@@ -73,7 +78,6 @@ export function AppSidebar({
               </AccordionContent>
             </AccordionItem>
 
-            {/* Placeholder for Chat History */}
             {chatHistory.length > 0 && (
               <AccordionItem value="history" className="border-b-0">
                  <AccordionTrigger className="px-4 py-3 text-sm font-medium hover:no-underline hover:bg-sidebar-accent group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:py-2">
