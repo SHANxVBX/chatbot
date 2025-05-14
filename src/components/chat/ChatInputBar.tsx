@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useRef, useEffect } from "react";
@@ -77,21 +76,17 @@ export function ChatInputBar({ onSendMessage, isLoading, onClearChat }: ChatInpu
   };
 
   const handleTextareaFocus = () => {
-    // On mobile, when textarea is focused, the keyboard might cover it.
-    // Attempt to scroll the input bar into view.
-    if (typeof window !== "undefined" && window.innerWidth < 768) { // Tailwind's 'sm' breakpoint is 640px, md is 768px. Use 768 to target typical mobile/small tablet.
-      // Using a timeout can help ensure the keyboard has started to animate in
-      // and the viewport has resized before attempting to scroll.
+    if (typeof window !== "undefined" && window.innerWidth < 768) { 
       setTimeout(() => {
         if (inputBarRef.current) {
           inputBarRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
         }
-      }, 150); // Delay might need adjustment based on testing across devices.
+      }, 150); 
     }
   };
   
   return (
-    <div ref={inputBarRef} className="border-t border-border/30 bg-background/70 p-2 sm:p-3 md:p-4 shadow-md backdrop-blur-md">
+    <div ref={inputBarRef} className="border-t border-border/30 bg-background/70 p-2 sm:p-2 md:p-3 shadow-md backdrop-blur-md">
       {selectedFile && (
         <div className="mb-2 flex items-center justify-between rounded-md border border-primary/30 bg-primary/10 p-2 text-sm text-primary">
           <span>File: {selectedFile.name}</span>
@@ -108,13 +103,13 @@ export function ChatInputBar({ onSendMessage, isLoading, onClearChat }: ChatInpu
           </Button>
         </div>
       )}
-      <div className="flex items-end gap-2">
+      <div className="flex items-end gap-1.5">
         <Textarea
           ref={textareaRef}
           value={inputText}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
-          onFocus={handleTextareaFocus} // Added onFocus handler
+          onFocus={handleTextareaFocus}
           placeholder="Transmit your query... (Shift+Enter for new line)"
           className="flex-1 resize-none rounded-lg border-border/50 bg-input/50 p-3 text-base shadow-inner focus:ring-primary/50 glassmorphic-input max-h-40 overflow-y-auto"
           rows={1}
@@ -151,10 +146,10 @@ export function ChatInputBar({ onSendMessage, isLoading, onClearChat }: ChatInpu
           <Button
             onClick={handleSend}
             disabled={isLoading || (!inputText.trim() && !selectedFile)}
-            className="bg-primary/90 hover:bg-primary text-primary-foreground aspect-square sm:aspect-auto sm:px-3 py-2 shadow-md hover:shadow-primary/40 transition-all duration-300 ease-in-out transform hover:scale-105"
+            className="bg-primary/90 hover:bg-primary text-primary-foreground aspect-square md:aspect-auto md:px-3 py-2 shadow-md hover:shadow-primary/40 transition-all duration-300 ease-in-out transform hover:scale-105"
             aria-label="Send message"
           >
-            <SendHorizonal className="h-5 w-5 sm:mr-0 md:mr-2" />
+            <SendHorizonal className="h-5 w-5 md:mr-2" />
             <span className="hidden md:inline">Send</span>
           </Button>
         </div>
@@ -162,4 +157,3 @@ export function ChatInputBar({ onSendMessage, isLoading, onClearChat }: ChatInpu
     </div>
   );
 }
-
