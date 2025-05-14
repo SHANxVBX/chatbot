@@ -55,8 +55,8 @@ export function useChatController() {
 
   // Default settings if nothing is in localStorage
   const hardcodedDefaultSettings: AISettings = {
-    apiKey: "", // This will be overridden by creator settings if they exist in localStorage
-    model: "openrouter/auto",
+    apiKey: "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", 
+    model: "qwen/qwen3-235b-a22b:free",
     provider: "OpenRouter"
   };
 
@@ -66,7 +66,13 @@ export function useChatController() {
       const storedSettings = localStorage.getItem(SETTINGS_STORAGE_KEY);
       if (storedSettings) {
         try {
-          return JSON.parse(storedSettings);
+          const parsedSettings = JSON.parse(storedSettings);
+          // Ensure API key is present, if not, use the hardcoded default.
+          // This handles cases where old settings might be stored without an API key.
+          if (!parsedSettings.apiKey || parsedSettings.apiKey.trim() === "") {
+            return { ...parsedSettings, apiKey: hardcodedDefaultSettings.apiKey };
+          }
+          return parsedSettings;
         } catch (e) {
           console.error("Failed to parse settings from localStorage, using defaults.", e);
           return hardcodedDefaultSettings;
@@ -147,20 +153,22 @@ export function useChatController() {
   // Effect for saving settings to localStorage and broadcasting changes
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+      // Always save the current settings, which might include the hardcoded defaults if nothing was loaded
+      const settingsToSave = { ...hardcodedDefaultSettings, ...settings };
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settingsToSave));
 
       if (!isUpdateFromBroadcast && window.BroadcastChannel) {
         // If the change was local (not from a broadcast), then broadcast it
         const channel = new BroadcastChannel(SETTINGS_BROADCAST_CHANNEL_NAME);
-        console.log('Broadcasting local settings update:', settings);
-        channel.postMessage({ type: 'SETTINGS_UPDATE', payload: settings });
+        console.log('Broadcasting local settings update:', settingsToSave);
+        channel.postMessage({ type: 'SETTINGS_UPDATE', payload: settingsToSave });
         channel.close(); // Close after broadcasting
       } else if (isUpdateFromBroadcast) {
         // Reset the flag if the update was from a broadcast
         setIsUpdateFromBroadcast(false);
       }
     }
-  }, [settings, isUpdateFromBroadcast]);
+  }, [settings, isUpdateFromBroadcast, hardcodedDefaultSettings]);
 
 
   const addMessage = useCallback((text: string, sender: MessageSender, type?: Message['type'], fileName?: string, filePreviewUri?: string, fileDataUri?: string) => {
@@ -224,8 +232,12 @@ export function useChatController() {
     let finalAiTextForDisplay = "";
     let finalReasoning = "The AI processed the input, considered relevant information from its knowledge base and the conversation history, and generated the most appropriate response according to its programming and the provided context.";
     let messageType: Message['type'] = 'text';
+    
+    // Use the current settings, which will include hardcoded defaults if not overridden by creator
+    const currentSettings = { ...hardcodedDefaultSettings, ...settings };
 
-    if (!settings.apiKey || settings.apiKey.trim() === "") {
+
+    if (!currentSettings.apiKey || currentSettings.apiKey.trim() === "") {
       finalAiTextForDisplay = "API key not set. Please configure your OpenRouter API key in the AI Provider Settings (sidebar).";
       finalReasoning = "API key check failed: The API key is missing from the settings. AI communication cannot proceed without a valid API key.";
       messageType = "error";
@@ -264,7 +276,7 @@ export function useChatController() {
         }
 
         const initialPayload = {
-          model: settings.model,
+          model: currentSettings.model,
           messages: [
             { role: "system", content: "You are CyberChat AI, a helpful and slightly futuristic AI assistant. You were created by Shan, a 19-year-old tech enthusiast from Malaysia. Provide concise and informative responses. Your responses should be formatted using basic markdown (bold, italics, newlines, code blocks, etc.). Incorporate friendly emojis where appropriate in your final answer, but not in the reasoning part. If you are unsure or don't know the answer, clearly state that." },
             ...apiMessageHistory,
@@ -279,7 +291,7 @@ export function useChatController() {
         const response = await fetch(OPENROUTER_API_URL, {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${settings.apiKey}`,
+            "Authorization": `Bearer ${currentSettings.apiKey}`,
             "Content-Type": "application/json",
             "HTTP-Referer": APP_SITE_URL, // Recommended by OpenRouter
             "X-Title": APP_TITLE, // Recommended by OpenRouter
@@ -366,8 +378,8 @@ export function useChatController() {
               { role: "user", content: `Based on the web search results provided, please answer my original question: "${userMessageText}"` } // Re-iterate to focus AI
             ];
 
-            const summarizationPayload = { model: settings.model, messages: summarizationApiMessages, stream: true, http_referer: APP_SITE_URL, x_title: APP_TITLE };
-            const summarizationResponse = await fetch(OPENROUTER_API_URL, { method: "POST", headers: { "Authorization": `Bearer ${settings.apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(summarizationPayload) });
+            const summarizationPayload = { model: currentSettings.model, messages: summarizationApiMessages, stream: true, http_referer: APP_SITE_URL, x_title: APP_TITLE };
+            const summarizationResponse = await fetch(OPENROUTER_API_URL, { method: "POST", headers: { "Authorization": `Bearer ${currentSettings.apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(summarizationPayload) });
 
             if (!summarizationResponse.ok) throw new Error(`Summarization API Error: ${summarizationResponse.status}`);
             if (!summarizationResponse.body) throw new Error("Summarization response body is null.");
@@ -568,14 +580,15 @@ export function useChatController() {
 
   return {
     messages,
-    settings,
+    settings, // This now returns the merged settings (localStorage or hardcoded)
     isLoading,
     isSearchingWeb,
     currentAIMessageId,
-    setSettings, // This is now the function that will trigger broadcast if settings change
+    setSettings, // This is the function that will trigger broadcast if settings change
     handleSendMessage,
     handleFileUpload,
     handleWebSearch,
     clearChat,
   };
 }
+
