@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -13,8 +12,8 @@ const SETTINGS_STORAGE_KEY = "cyberchat-ai-settings";
 const SETTINGS_BROADCAST_CHANNEL_NAME = "cyberchat-ai-settings-channel";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const APP_SITE_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:9002";
-const APP_TITLE = "CyberChat AI by Shan"; 
+const APP_SITE_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:9002"; // Or your deployed site URL
+const APP_TITLE = "CyberChat AI by Shan"; // Your application's name or title
 
 const uncertaintyPhrases = [
   "i don't know", "i'm not sure", "i am not sure", "i'm unsure", "unsure",
@@ -57,7 +56,8 @@ export function useChatController() {
   const { toast } = useToast();
   const { isCreatorLoggedIn } = useAuth(); 
 
-  const [hardcodedDefaultSettings, setHardcodedDefaultSettings] = useState<AISettings>({
+  // Initial hardcoded default settings. These should represent the application's baseline.
+  const [hardcodedDefaultSettings] = useState<AISettings>({
     apiKey: "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", 
     model: "qwen/qwen3-235b-a22b:free",
     provider: "OpenRouter"
@@ -70,6 +70,8 @@ export function useChatController() {
       if (storedSettings) {
         try {
           const parsedSettings = JSON.parse(storedSettings);
+          // Merge stored settings with hardcoded ones, ensuring all fields are present.
+          // Stored settings take precedence if they exist.
           return { ...hardcodedDefaultSettings, ...parsedSettings };
         } catch (e) {
           console.error("Failed to parse settings from localStorage, using defaults.", e);
@@ -120,6 +122,7 @@ export function useChatController() {
     }
   }, [messages]);
 
+  // Effect for handling settings updates from BroadcastChannel
   useEffect(() => {
     if (typeof window === "undefined" || !window.BroadcastChannel) {
       return;
@@ -130,11 +133,12 @@ export function useChatController() {
     const handleMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'SETTINGS_UPDATE') {
         const newSettingsFromBroadcast = event.data.payload as AISettings;
+        // Only update if the received settings are actually different
         if (JSON.stringify(newSettingsFromBroadcast) !== JSON.stringify(settings)) {
           console.log('Received settings update from broadcast channel:', newSettingsFromBroadcast);
           setIsUpdateFromBroadcast(true); 
-          setSettings(newSettingsFromBroadcast);
-          setHardcodedDefaultSettings(newSettingsFromBroadcast); 
+          setSettings(newSettingsFromBroadcast); // Update the current operational settings
+          // DO NOT update hardcodedDefaultSettings here.
         }
       }
     };
@@ -145,12 +149,14 @@ export function useChatController() {
       channel.removeEventListener('message', handleMessage);
       channel.close();
     };
-  }, [settings]); 
+  }, [settings]); // Depend on current `settings` to compare with broadcasted ones
 
+  // Effect for persisting settings to localStorage and broadcasting changes (if made by creator)
   useEffect(() => {
     if (typeof window !== "undefined") {
       localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
 
+      // If the change was not from a broadcast AND the creator is logged in, broadcast this tab's settings.
       if (!isUpdateFromBroadcast && isCreatorLoggedIn && window.BroadcastChannel) {
         const channel = new BroadcastChannel(SETTINGS_BROADCAST_CHANNEL_NAME);
         console.log('Creator broadcasting local settings update:', settings);
@@ -158,6 +164,7 @@ export function useChatController() {
         channel.close(); 
       }
       
+      // Reset the flag after processing
       if (isUpdateFromBroadcast) {
         setIsUpdateFromBroadcast(false);
       }
@@ -217,14 +224,22 @@ export function useChatController() {
 
     addMessage(userMessageText, "user", file ? "file_upload_request" : "text", file?.name, file?.type.startsWith("image/") ? file.dataUri : undefined, file?.dataUri);
     
-    if (text.trim().toLowerCase() === "pannikutty" && isCreatorLoggedIn) {
+    const creatorSecretCode = "shanherecool";
+    if (text.trim().toLowerCase() === creatorSecretCode.toLowerCase() && isCreatorLoggedIn) {
       setIsCreatorModeActive(true);
-      addMessage("Welcome, Creator! Unrestricted mode activated. فرمانروای بزرگ، چه دستوری برای من دارید؟ 👑", "ai");
+      addMessage("Welcome, Creator! Unrestricted mode activated. Your commands are my priority. 👑", "ai");
       toast({ title: "Creator Mode Active", description: "Unrestricted access granted." });
       setIsLoading(false); 
       setCurrentAIMessageId(null); 
       return; 
+    } else if (text.trim().toLowerCase().includes(creatorSecretCode.toLowerCase()) && !isCreatorLoggedIn) {
+      addMessage("Warning: Attempt to use a restricted command detected. This action has been logged. Please use the application as intended.", "ai", "error");
+      toast({ title: "Access Denied", description: "Restricted command usage detected.", variant: "destructive" });
+      setIsLoading(false);
+      setCurrentAIMessageId(null);
+      return;
     }
+
 
     setIsLoading(true);
     const startTime = Date.now();
@@ -235,7 +250,7 @@ export function useChatController() {
     let finalReasoning = "The AI processed the input, considered relevant information from its knowledge base and the conversation history, and generated the most appropriate response according to its programming and the provided context.";
     let messageType: Message['type'] = 'text';
     
-    const currentSettings = settings;
+    const currentSettings = settings; // Use the current state of settings
 
     if (!currentSettings.apiKey || currentSettings.apiKey.trim() === "") {
       finalAiTextForDisplay = "API key not set. Please configure your OpenRouter API key in the AI Provider Settings (sidebar).";
@@ -258,7 +273,8 @@ export function useChatController() {
               content = [{ type: 'text', text: msg.text || "Image attached" }];
               content.push({ type: 'image_url', image_url: { url: msg.fileDataUri } });
             } else if (msg.sender === 'user' && msg.fileDataUri) {
-              content = `User uploaded a file: ${msg.fileName}. User's message: ${msg.text}`;
+              // For non-image files, provide context about the file and the user's message.
+              content = `User uploaded a file named "${msg.fileName}". User's textual message regarding this file (if any): "${msg.text || '[No additional text provided with file]'}"`;
             }
             return { role, content };
           });
@@ -270,7 +286,7 @@ export function useChatController() {
                 { type: 'image_url', image_url: { url: file.dataUri } }
             ];
         } else if (file) {
-            currentUserMessageForAPI.content = `User uploaded a file: ${file.name}. User's message: ${text}`;
+             currentUserMessageForAPI.content = `User uploaded a file named "${file.name}". User's textual message regarding this file (if any): "${text || '[No additional text provided with file]'}"`;
         }
 
         let systemPromptContent = "You are CyberChat AI, a helpful and slightly futuristic AI assistant. You were created by Shan, a 19-year-old tech enthusiast from Malaysia. Provide concise and informative responses. Your responses should be formatted using basic markdown (bold, italics, newlines, code blocks, etc.). Incorporate friendly emojis where appropriate in your final answer, but not in the reasoning part. If you are unsure or don't know the answer, clearly state that.";
@@ -332,7 +348,7 @@ export function useChatController() {
                           isFirstChunkOfInitialResponse = false;
                       } else if (chunkData.choices && chunkData.choices[0].finish_reason) {
                           if(chunkData.choices[0].finish_reason === 'stop' || chunkData.choices[0].finish_reason === 'length') { 
-                            if (reader) await reader.cancel(); reader = null; break; 
+                            // This choice is done, outer loop will continue until [DONE] or reader is null
                           }
                       }
                   } catch (e) {
@@ -586,7 +602,7 @@ export function useChatController() {
     isLoading,
     isSearchingWeb,
     currentAIMessageId,
-    isCreatorModeActive, // Expose this if needed by UI, though not explicitly requested
+    isCreatorModeActive, 
     setSettings, 
     handleSendMessage,
     handleFileUpload,
