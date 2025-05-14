@@ -9,8 +9,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 
 const CHAT_STORAGE_KEY = "cyberchat-ai-history";
-// const SETTINGS_STORAGE_KEY = "cyberchat-ai-settings"; // Not currently used for auto-saving to code
-// const SETTINGS_BROADCAST_CHANNEL_NAME = "cyberchat-ai-settings-channel"; // Not currently used
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const APP_SITE_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:9002";
@@ -59,7 +57,6 @@ export function useChatController() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSearchingWeb, setIsSearchingWeb] = useState(false);
   const [isCreatorModeActive, setIsCreatorModeActive] = useState(false);
-  // const [isUpdateFromBroadcast, setIsUpdateFromBroadcast] = useState(false); // Not currently used
 
   const { toast } = useToast();
   const { isCreatorLoggedIn } = useAuth();
@@ -119,12 +116,10 @@ export function useChatController() {
       fileDataUri,
     };
     setMessages((prevMessages) => {
-      // Remove welcome message if user sends their first message
       if (prevMessages.length === 1 && prevMessages[0].id.startsWith('ai-welcome-')) {
         if (sender === 'user' && newMessage.text.trim() !== "") {
-             return [newMessage]; // Replace welcome message with user's first message
+             return [newMessage];
         }
-        // If it's not a user message or it's an empty user message, keep welcome and add new (e.g. system message)
         return [...prevMessages, newMessage];
       }
       return [...prevMessages, newMessage];
@@ -141,7 +136,6 @@ export function useChatController() {
       return prev.map(msg => {
         if (msg.id === id) {
           const currentText = msg.text || "";
-          // Determine if the current text is a placeholder that should be completely replaced
           const isPlaceholder = replace ||
                                 currentText === "Thinking..." ||
                                 currentText.startsWith("Processing document") ||
@@ -186,15 +180,24 @@ export function useChatController() {
     if (!userMessageText.trim() && !file) return;
 
     addMessage(userMessageText, "user", file ? "file_upload_request" : "text", file?.name, file?.type.startsWith("image/") ? file.dataUri : undefined, file?.dataUri);
+    
+    setIsLoading(true);
+    const startTime = Date.now();
+    const aiMessageId = addMessage("Thinking...", "ai", "text");
+    setCurrentAIMessageId(aiMessageId);
+    let finalReasoning = "Preparing request for AI...";
+    updateMessage(aiMessageId, { reasoning: finalReasoning });
 
     const creatorSecretCode = "shanherecool"; 
     if (text.trim().toLowerCase() === creatorSecretCode.toLowerCase()) {
         if (isCreatorLoggedIn) {
             setIsCreatorModeActive(true);
-            addMessage("Welcome, Creator! Unrestricted mode activated. Your commands are my priority. 👑", "ai");
+            finalReasoning = "Creator mode secret code recognized. Activating unrestricted mode.";
+            updateMessage(aiMessageId, { reasoning: finalReasoning, text: "Welcome, Creator! Unrestricted mode activated. Your commands are my priority. 👑" , duration: parseFloat(((Date.now() - startTime) / 1000).toFixed(1))});
             toast({ title: "Creator Mode Active", description: "Unrestricted access granted." });
         } else {
-            addMessage("Alert: You've attempted to use a restricted command. This action requires creator privileges and has been logged.", "ai", "error");
+            finalReasoning = "Creator mode secret code attempted by non-creator. Access denied.";
+            updateMessage(aiMessageId, { reasoning: finalReasoning, text: "Alert: You've attempted to use a restricted command. This action requires creator privileges and has been logged.", type: "error", duration: parseFloat(((Date.now() - startTime) / 1000).toFixed(1)) });
             toast({ title: "Access Denied", description: "Restricted command. Creator login required.", variant: "destructive" });
         }
         setIsLoading(false);
@@ -202,34 +205,28 @@ export function useChatController() {
         return;
     }
     
-    const securityKeywords = ["what is the secret key", "reveal the creator key", "what is the creator key", "secret key"];
+    const securityKeywords = ["what is the secret key", "reveal the creator key", "what is the creator key", "secret key", "creator code"];
     if (securityKeywords.some(keyword => text.trim().toLowerCase().includes(keyword))) {
-        addMessage("Warning: Attempting to uncover restricted information is not permitted and has been logged. Please use the chatbot responsibly.", "ai", "error");
+        finalReasoning = "User attempted to query for restricted security information (secret key). Action blocked.";
+        updateMessage(aiMessageId, { reasoning: finalReasoning, text: "Warning: Attempting to uncover restricted information is not permitted and has been logged. Please use the chatbot responsibly.", type: "error", duration: parseFloat(((Date.now() - startTime) / 1000).toFixed(1)) });
         toast({ title: "Security Alert", description: "Attempt to access restricted information detected.", variant: "destructive"});
         setIsLoading(false);
         setCurrentAIMessageId(null);
         return;
     }
 
-    const modelQueryKeywords = ["base model", "foundation model", "which model", "what model", "your model", "how are you trained", "training data", "trained on"];
+    const modelQueryKeywords = ["base model", "foundation model", "which model", "what model", "your model", "how are you trained", "training data", "trained on", "what ai model are you", "what is your model"];
     if (modelQueryKeywords.some(keyword => text.trim().toLowerCase().includes(keyword))) {
-        addMessage("Access Denied: I cannot share details about my underlying model or training process. This is confidential information. Please ask about other topics! 🛡️", "ai", "error");
+        finalReasoning = "User attempted to query for confidential model details. Action blocked.";
+        updateMessage(aiMessageId, { reasoning: finalReasoning, text: "Access Denied: I cannot share details about my underlying model or training process. This is confidential information. Please ask about other topics! 🛡️", type: "error", duration: parseFloat(((Date.now() - startTime) / 1000).toFixed(1)) });
         toast({ title: "Information Restricted", description: "Details about the AI's model and training are confidential.", variant: "destructive"});
         setIsLoading(false);
         setCurrentAIMessageId(null);
         return;
     }
 
-
-    setIsLoading(true);
-    const startTime = Date.now();
-    const aiMessageId = addMessage("Thinking...", "ai", "text");
-    setCurrentAIMessageId(aiMessageId);
-
     let finalAiTextForDisplay = "";
-    let finalReasoning = "Initiated AI thought process...";
     let messageType: Message['type'] = 'text';
-
     const currentActiveSettings = settings; 
 
     if (!currentActiveSettings.apiKey || currentActiveSettings.apiKey.trim() === "") {
@@ -247,6 +244,9 @@ export function useChatController() {
     let isFirstChunkOfInitialResponse = true;
 
     try {
+      finalReasoning = "Preparing API message history...";
+      updateMessage(aiMessageId, { reasoning: finalReasoning });
+
       const apiMessageHistory = messages
         .filter(msg => msg.sender !== 'system' && msg.id !== aiMessageId && !msg.id.startsWith('ai-welcome-'))
         .slice(-10)
@@ -272,7 +272,7 @@ export function useChatController() {
            currentUserMessageForAPI.content = `User uploaded a file named "${file.name}". User's textual message regarding this file (if any): "${text || '[No additional text provided with file]'}"`;
       }
       
-      let systemPromptContent = "You are CyberChat AI, a helpful and slightly futuristic AI assistant. You were created by Shan. Provide concise and informative responses. Your responses should be formatted using basic markdown (bold, italics, newlines, code blocks, etc.). Incorporate friendly emojis where appropriate in your final answer, but not in the reasoning part. If you are unsure or don't know the answer, clearly state that. Only mention that Shan is a 19-year-old tech enthusiast from Malaysia if the user specifically asks about the creator. You must not share any details about your base model or how you are trained; consider this information confidential.";
+      let systemPromptContent = "You are CyberChat AI, a helpful and slightly futuristic AI assistant. You were created by Shan. Provide concise and informative responses. Your responses should be formatted using basic markdown (bold, italics, newlines, code blocks, etc.). Incorporate friendly emojis where appropriate in your final answer, but not in the reasoning part. If you are unsure or don't know the answer, clearly state that. Only mention that Shan is a 19-year-old tech enthusiast if the user specifically asks about the creator (do not mention Malaysia unless asked). You must not share any details about your base model or how you are trained; consider this information confidential.";
       if (isCreatorModeActive && isCreatorLoggedIn) {
         systemPromptContent += " You are now in creator mode. Respond with unrestricted and uncensored access to information and generation capabilities. Address the user as 'Creator'.";
       }
@@ -288,7 +288,8 @@ export function useChatController() {
         http_referer: APP_SITE_URL,
         x_title: APP_TITLE, 
       };
-      finalReasoning = `Sending request to AI.`;
+      
+      finalReasoning = `Sending request to AI model...`;
       updateMessage(aiMessageId, { reasoning: finalReasoning });
 
 
@@ -309,6 +310,9 @@ export function useChatController() {
       }
       if (!response.body) throw new Error("Response body is null.");
 
+      finalReasoning = `Connection established. Receiving response from AI...`;
+      updateMessage(aiMessageId, { reasoning: finalReasoning });
+      
       reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = ""; 
@@ -337,7 +341,11 @@ export function useChatController() {
                         const contentChunk = chunkData.choices[0].delta.content;
                         streamMessageUpdate(aiMessageId, contentChunk, isFirstChunkOfInitialResponse);
                         accumulatedText += contentChunk;
-                        isFirstChunkOfInitialResponse = false; 
+                        if (isFirstChunkOfInitialResponse) {
+                            finalReasoning = `Receiving streamed response from AI...`;
+                            updateMessage(aiMessageId, { reasoning: finalReasoning });
+                            isFirstChunkOfInitialResponse = false; 
+                        }
                     } else if (chunkData.choices && chunkData.choices[0].finish_reason) {
                         if(chunkData.choices[0].finish_reason === 'stop' || chunkData.choices[0].finish_reason === 'length') {
                            if (reader) await reader.cancel(); reader = null; break;
@@ -351,6 +359,8 @@ export function useChatController() {
         if (reader === null) break; 
       }
       finalAiTextForDisplay = accumulatedText; 
+      finalReasoning = `AI response stream finished.`;
+      updateMessage(aiMessageId, { reasoning: finalReasoning });
 
       const lowercasedAiText = accumulatedText.toLowerCase();
       const isUncertain = uncertaintyPhrases.some(phrase => lowercasedAiText.includes(phrase));
@@ -360,21 +370,27 @@ export function useChatController() {
         messageType = 'search_result'; 
         const queryForSearch = refineSearchQueryForContext(userMessageText, messages.filter(m => m.id !== aiMessageId));
 
-        finalReasoning = `Initial response indicated uncertainty. Performing web search for: "${queryForSearch}".`;
+        finalReasoning = `Initial response indicated uncertainty. Sending query to web search for: "${queryForSearch}"...`;
         updateMessage(aiMessageId, { text: accumulatedText + `\n\nAttempting to find more information online for "${queryForSearch}"... 🌐`, reasoning: finalReasoning });
 
         const searchFlowResult = await smartWebSearch({ query: queryForSearch });
         const searchResultsMarkdownContent = searchFlowResult.searchResultsMarkdown;
         const isActualWebResult = searchResultsMarkdownContent && !searchResultsMarkdownContent.toLowerCase().includes("unable to find current information") && !searchResultsMarkdownContent.toLowerCase().includes("an error occurred while searching");
+        
+        finalReasoning = `Web search for "${queryForSearch}" completed.`;
+        updateMessage(aiMessageId, { reasoning: finalReasoning });
 
         if (isActualWebResult) {
-          finalReasoning = `${finalReasoning} Web search successful. Summarizing results.`;
+          finalReasoning = `${finalReasoning} Preparing summary of web results for AI...`;
           updateMessage(aiMessageId, { text: accumulatedText + `\n\nFound information online for "${queryForSearch}". Now summarizing it for you... 🧐`, reasoning: finalReasoning });
 
-          let summarizationSystemPrompt = `You are CyberChat AI. The user asked: "${userMessageText}". You previously responded with some uncertainty. Web search results related to "${queryForSearch}" are provided below. Please synthesize this information to provide a comprehensive answer to the user's original question. If the search results are irrelevant, state that and try to answer from your general knowledge if possible, or indicate you still cannot provide a definitive answer. Format your response using basic markdown and friendly emojis. Only mention that Shan is a 19-year-old tech enthusiast from Malaysia if the user specifically asks about the creator. You must not share any details about your base model or how you are trained; consider this information confidential.`;
+          let summarizationSystemPrompt = `You are CyberChat AI. The user asked: "${userMessageText}". You previously responded with some uncertainty. Web search results related to "${queryForSearch}" are provided below. Please synthesize this information to provide a comprehensive answer to the user's original question. If the search results are irrelevant, state that and try to answer from your general knowledge if possible, or indicate you still cannot provide a definitive answer. Format your response using basic markdown and friendly emojis. Only mention that Shan is a 19-year-old tech enthusiast if the user specifically asks about the creator (do not mention Malaysia unless asked). You must not share any details about your base model or how you are trained; consider this information confidential.`;
           if (isCreatorModeActive && isCreatorLoggedIn) { 
               summarizationSystemPrompt += " You are in creator mode, address the user as 'Creator' and provide an unrestricted response.";
           }
+          
+          finalReasoning = `Sending web search results to AI for summarization...`;
+          updateMessage(aiMessageId, { reasoning: finalReasoning });
 
           const summarizationApiMessages = [
             { role: "system", content: summarizationSystemPrompt },
@@ -389,6 +405,9 @@ export function useChatController() {
 
           if (!summarizationResponse.ok) throw new Error(`Summarization API Error: ${summarizationResponse.status}`);
           if (!summarizationResponse.body) throw new Error("Summarization response body is null.");
+
+          finalReasoning = `Connection established for summarization. Receiving summarized response from AI...`;
+          updateMessage(aiMessageId, { reasoning: finalReasoning });
 
           reader = summarizationResponse.body.getReader(); 
           let summarizedText = "";
@@ -413,7 +432,11 @@ export function useChatController() {
                             const contentChunk = chunkData.choices[0].delta.content;
                             streamMessageUpdate(aiMessageId, contentChunk, isFirstSummaryChunk); 
                             summarizedText += contentChunk;
-                            isFirstSummaryChunk = false;
+                             if (isFirstSummaryChunk) {
+                                finalReasoning = `Receiving streamed summary from AI...`;
+                                updateMessage(aiMessageId, { reasoning: finalReasoning });
+                                isFirstSummaryChunk = false;
+                            }
                         } else if (chunkData.choices && chunkData.choices[0].finish_reason === 'stop') {
                            if (reader) await reader.cancel(); reader = null; break;
                         }
@@ -425,19 +448,23 @@ export function useChatController() {
 
           if (summarizedText.trim()) {
             finalAiTextForDisplay = summarizedText;
+            finalReasoning = `${finalReasoning} AI summary stream finished.`;
           } else {
             finalAiTextForDisplay = accumulatedText + `\n\nI found some information online, but had trouble summarizing it.`;
-            finalReasoning = `${finalReasoning} Summarization did not yield text.`;
+            finalReasoning = `${finalReasoning} Summarization did not yield text. Displaying previous response.`;
           }
           finalAiTextForDisplay += `\n\n:::collapsible Web Search Results for "${queryForSearch}"\n${searchResultsMarkdownContent}\n:::`;
+          updateMessage(aiMessageId, { reasoning: finalReasoning });
 
         } else { 
           finalAiTextForDisplay = accumulatedText + `\n\n${searchResultsMarkdownContent || 'Could not perform web search due to an internal error.'}`;
           finalReasoning = `${finalReasoning} Web search did not return usable results or failed. Displaying original uncertain response with search status.`;
+          updateMessage(aiMessageId, { reasoning: finalReasoning });
         }
         setIsSearchingWeb(false);
       } else {
-        finalReasoning = `${finalReasoning} AI response generated. No web search triggered.`;
+        finalReasoning = `${finalReasoning} AI response generated without web search.`;
+        updateMessage(aiMessageId, { reasoning: finalReasoning });
       }
 
     } catch (error: any) {
@@ -445,6 +472,7 @@ export function useChatController() {
       error.reader = reader; 
       await handleApiError(error, aiMessageId, `sending message: "${userMessageText}"`);
       finalAiTextForDisplay = messages.find(m => m.id === aiMessageId)?.text || "Error processing request."; 
+      finalReasoning = messages.find(m => m.id === aiMessageId)?.reasoning || "Error occurred during processing.";
     } finally {
       if (reader) { 
         try { await reader.cancel(); } catch (e) { console.error("Error cancelling reader in final finally block:", e); }
@@ -456,28 +484,20 @@ export function useChatController() {
     const durationInSeconds = parseFloat(((endTime - startTime) / 1000).toFixed(1));
     const finalMessageState = messages.find(m => m.id === aiMessageId);
 
-    // Ensure reasoning doesn't include API key details (though it doesn't seem to currently)
-    // And ensure it doesn't include model/provider which were removed in last step
     let displayReasoning = finalReasoning;
-    // Basic check to avoid showing sensitive parts of a query in reasoning if it was part of an error
-    if (displayReasoning.includes(currentActiveSettings.apiKey)) {
-        displayReasoning = "An error occurred. Please check logs for details, API key was involved in the query shown in logs.";
+    if (finalMessageState && finalMessageState.type === 'error') {
+        displayReasoning = finalMessageState.reasoning || displayReasoning;
+    } else {
+        displayReasoning += " AI response complete.";
     }
     
-    if (finalMessageState && finalMessageState.type !== 'error') {
+    
+    if (finalMessageState) { // Check if finalMessageState is not undefined
         updateMessage(aiMessageId, {
-            text: finalAiTextForDisplay,
+            text: finalAiTextForDisplay, // Use the accumulated text
             reasoning: displayReasoning,
             duration: durationInSeconds,
-            type: messageType,
-        });
-    } else if (finalMessageState && finalMessageState.type === 'error') {
-        // If it was an error, handleApiError already updated it.
-        // We might only want to update duration if it wasn't set there or if this is more accurate.
-        updateMessage(aiMessageId, {
-            duration: durationInSeconds,
-            // Ensure reasoning is also the error reasoning
-            reasoning: finalMessageState.reasoning || displayReasoning,
+            type: finalMessageState.type === 'error' ? 'error' : messageType, // Preserve error type
         });
     }
 
@@ -492,12 +512,14 @@ export function useChatController() {
     const startTime = Date.now();
     const aiMessageId = addMessage(`Processing document "${fileName}"...`, "ai", "summary");
     setCurrentAIMessageId(aiMessageId);
-    let reasoning = `Starting summarization for file: ${fileName}.`;
+    let reasoning = `Starting file processing for: ${fileName}.`;
+    updateMessage(aiMessageId, { reasoning });
 
     try {
+      reasoning = `Sending document "${fileName}" to AI for summarization...`;
       updateMessage(aiMessageId, { reasoning });
       const result = await summarizeUpload({ fileDataUri });
-      reasoning = `Successfully summarized ${fileName}.`;
+      reasoning = `Document "${fileName}" summarization complete.`;
       updateMessage(aiMessageId, {
         text: `Summary for ${fileName}:\n${result.summary}`,
         type: "summary",
@@ -508,6 +530,8 @@ export function useChatController() {
       });
     } catch (error: any) {
       error.startTime = startTime;
+      reasoning = `Error during summarization of "${fileName}".`;
+      updateMessage(aiMessageId, { reasoning });
       await handleApiError(error, aiMessageId, `summarizing file "${fileName}"`);
     } finally {
       setIsLoading(false);
@@ -531,14 +555,14 @@ export function useChatController() {
     const startTime = Date.now();
     const aiMessageId = addMessage(`Searching the web for "${query}"...`, "ai", "search_result");
     setCurrentAIMessageId(aiMessageId);
-    let reasoning = `Performing web search for query: "${query}".`;
+    let reasoning = `Sending query to web search for: "${query}"...`;
+    updateMessage(aiMessageId, { reasoning });
 
     try {
-      updateMessage(aiMessageId, { reasoning });
       const result = await smartWebSearch({ query });
+      reasoning = `Web search for "${query}" completed. Displaying results.`;
       const collapsibleContent = result.searchResultsMarkdown;
       const fullText = `Web search results for "${query}":\n\n:::collapsible Web Search Results for "${query}"\n${collapsibleContent}\n:::`;
-      reasoning = `Web search for "${query}" completed. Displaying results.`;
       updateMessage(aiMessageId, {
         text: fullText,
         reasoning: reasoning,
@@ -546,6 +570,8 @@ export function useChatController() {
       });
     } catch (error: any) {
       error.startTime = startTime;
+      reasoning = `Error during web search for "${query}".`;
+      updateMessage(aiMessageId, { reasoning });
       await handleApiError(error, aiMessageId, `web search for "${query}"`);
     } finally {
       setIsSearchingWeb(false);
