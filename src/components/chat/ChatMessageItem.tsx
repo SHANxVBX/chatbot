@@ -25,12 +25,25 @@ const renderText = (text: string): React.ReactNode[] => {
     if (collapsibleMatch) {
       const title = collapsibleMatch[2];
       const content = collapsibleMatch[3];
+      const isWebSearchResult = title.toLowerCase().startsWith("web search results");
+
       return (
         <details
           key={`details-${index}`}
-          className="my-2 p-3 bg-primary/10 dark:bg-primary/20 rounded-md shadow-md border border-primary/20 dark:border-primary/30"
+          className={cn(
+            "my-2 p-3 rounded-md shadow-md border",
+            isWebSearchResult 
+              ? "bg-primary/10 dark:bg-primary/20 border-primary/20 dark:border-primary/30" 
+              : "bg-muted/20 dark:bg-muted/30 border-border/20 dark:border-border/30"
+          )}
         >
-          <summary className="font-semibold cursor-pointer text-sm text-primary dark:text-primary-foreground/80 hover:text-primary/80 dark:hover:text-primary-foreground">
+          <summary className={cn(
+            "font-semibold cursor-pointer text-sm hover:opacity-80",
+            isWebSearchResult 
+              ? "text-primary dark:text-primary-foreground/80"
+              : "text-foreground/80 dark:text-foreground/90"
+            )}
+          >
             {title}
           </summary>
           <div className="mt-2 text-xs prose-sm dark:prose-invert max-w-none prose-p:text-foreground/90 prose-li:text-foreground/90 prose-a:text-accent hover:prose-a:text-accent/80">
@@ -65,7 +78,7 @@ const renderText = (text: string): React.ReactNode[] => {
 };
 
 
-export function ChatMessageItem({ message }: ChatMessageItemProps) {
+export function ChatMessageItem({ message }: { message: Message }) {
   const isUser = message.sender === "user";
   const isSystem = message.sender === "system";
 

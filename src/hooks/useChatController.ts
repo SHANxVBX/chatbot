@@ -15,43 +15,37 @@ const APP_SITE_URL = typeof window !== "undefined" ? window.location.origin : "h
 const APP_TITLE = "CyberChat AI";
 
 const uncertaintyPhrases = [
-  "i don't know", "i'm not sure", "i am not sure", "i'm unsure", 
-  "i can't recall", "i cannot recall", "i do not know", 
-  "it's unclear to me", "i lack information", "i have no information"
+  "i don't know", "i'm not sure", "i am not sure", "i'm unsure", "unsure",
+  "i can't recall", "i cannot recall", "i do not know", "don't know",
+  "it's unclear to me", "i lack information", "i have no information",
+  "i'm not certain", "uncertain", "no idea", "haven't a clue"
 ];
 
-const stopWords = new Set([
-  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'he', 
-  'in', 'is', 'it', 'its', 'of', 'on', 'that', 'the', 'to', 'was', 'were', 
-  'will', 'with', 'what', 'who', 'when', 'where', 'why', 'how', 'i', 'you', 
-  'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'your', 'yours', 
-  'yourself', 'yourselves', 'him', 'his', 'himself', 'she', 'her', 'hers', 
-  'herself', 'itself', 'they', 'them', 'their', 'theirs', 'themselves', 
-  'about', 'above', 'after', 'again', 'against', 'all', 'am', 'any', 'both', 
-  'but', 'can', 'cannot', 'could', 'did', 'do', 'does', 'doing', 'down', 
-  'during', 'each', 'few', 'further', 'had', 'having', 'here', 'into', 
-  'just', 'more', 'most', 'no', 'nor', 'not', 'now', 'only', 'or', 'other', 
-  'out', 'over', 'own', 'same', 'should', 'so', 'some', 'such', 'than', 
-  'then', 'there', 'these', 'this', 'those', 'through', 'too', 'under', 
-  'until', 'up', 'very', 'wasn\'t', 'weren\'t', 'won\'t', 'would'
-]);
+// Minimal stop words for client-side query refinement, more extensive list in smart-web-search flow
+const clientStopWords = new Set(['a', 'an', 'the', 'is', 'are', 'was', 'were']);
 
-function refineSearchQuery(originalQuery: string, chatHistory: Message[]): string {
+function refineSearchQueryForContext(originalQuery: string, chatHistory: Message[]): string {
   let query = originalQuery.toLowerCase();
   
-  // Remove stop words
-  query = query.split(/\s+/).filter(word => !stopWords.has(word)).join(' ');
+  // Basic removal of client-side stop words
+  query = query.split(/\s+/).filter(word => !clientStopWords.has(word)).join(' ');
 
   // Add context from last 1-2 user messages if relevant
-  const userMessages = chatHistory.filter(m => m.sender === 'user').slice(-3, -1); // Get 2nd and 3rd last user messages
-  let context = "";
-  if (userMessages.length > 0) {
-    context = userMessages.map(m => m.text).join(" ");
-    // Basic check to see if current query is a follow-up like "tell me more"
-    if (query.length < 15 && (query.includes("more") || query.includes("about it") || query.includes("that"))) {
-       const refinedContext = context.split(/\s+/).filter(word => !stopWords.has(word.toLowerCase())).join(' ');
-       query = refinedContext + " " + query;
-    }
+  // Get the most recent user messages that are not the current one being processed
+  const relevantHistory = chatHistory.filter(m => m.sender === 'user' && m.text.toLowerCase() !== originalQuery.toLowerCase()).slice(-2);
+  
+  let contextKeywords = "";
+  if (relevantHistory.length > 0) {
+    contextKeywords = relevantHistory.map(m => m.text.toLowerCase().split(/\s+/).filter(word => !clientStopWords.has(word) && word.length > 2).join(" ")).join(" ");
+  }
+  
+  // If current query is very short and seems like a follow-up, prepend context.
+  if (query.split(/\s+/).length <= 3 && (query.includes("more") || query.includes("about it") || query.includes("that"))) {
+     if (contextKeywords) {
+        query = contextKeywords.split(/\s+/).slice(0,5).join(" ") + " " + query; // limit context length
+     }
+  } else if (contextKeywords && query.length < originalQuery.length * 0.5) { // If query significantly shortened
+    query = contextKeywords.split(/\s+/).slice(0,5).join(" ") + " " + originalQuery.toLowerCase();
   }
   
   return query.trim() || originalQuery; // Fallback to original query if refinement results in empty
@@ -130,10 +124,12 @@ export function useChatController() {
       fileDataUri,
     };
     setMessages((prevMessages) => {
+      // If only welcome message exists, replace it if user sends a non-empty message
       if (prevMessages.length === 1 && prevMessages[0].id.startsWith('ai-welcome-')) {
         if (sender === 'user' && newMessage.text.trim() !== "") { 
-             return [newMessage];
+             return [newMessage]; // Replace welcome with user's first message
         }
+         // Otherwise, append (e.g. system message, or if user somehow sends empty)
         return [...prevMessages, newMessage]; 
       }
       return [...prevMessages, newMessage];
@@ -149,6 +145,8 @@ export function useChatController() {
     setMessages(prev => {
       return prev.map(msg => {
         if (msg.id === id) {
+          // If current text is a placeholder (like "Thinking..."), replace it with the first chunk.
+          // Otherwise, append the chunk.
           const isInitialPlaceholder = msg.text === "Thinking..." || msg.text.startsWith("Processing") || msg.text.startsWith("Searching");
           const updatedText = isInitialPlaceholder ? chunk : (msg.text || "") + chunk; 
           return { ...msg, text: updatedText, timestamp: Date.now() };
@@ -160,6 +158,7 @@ export function useChatController() {
 
   const handleSendMessage = async (text: string, file?: { dataUri: string; name: string; type: string }) => {
     const userMessageText = text || (file ? `Attached: ${file.name}`: "");
+    // Prevent sending empty messages unless a file is attached
     if (!userMessageText.trim() && !file) return; 
 
     const userMessageId = addMessage(userMessageText, "user", file ? "file_upload_request" : "text", file?.name, file?.type.startsWith("image/") ? file.dataUri : undefined, file?.dataUri);
@@ -192,26 +191,32 @@ export function useChatController() {
     let accumulatedText = ""; 
 
     try {
+      // Prepare message history, excluding system messages, the current "Thinking..." AI message, and initial welcome if it's the only other one.
       const apiMessageHistory = messages
         .filter(msg => {
-            if (msg.sender === 'system') return false;
+            if (msg.sender === 'system') return false; // Exclude system messages
+             // Exclude the initial welcome message if it's still present and we are about to send the first real user message
             if (msg.id.startsWith('ai-welcome-') && messages.length <= 2 && messages.some(m=>m.id.startsWith('ai-welcome-'))) return false;
+            // Exclude the current AI placeholder message
             if (msg.id === aiMessageId && (msg.text === "Thinking..." || msg.text.startsWith("Processing") || msg.text.startsWith("Searching"))) return false;
             return true; 
         })
-        .slice(-10)
+        .slice(-10) // Take last 10 relevant messages
         .map(msg => {
           const role = msg.sender === 'user' ? 'user' : 'assistant';
           let content: any = msg.text;
+          // Handle image attachments for user messages
           if (msg.sender === 'user' && msg.fileDataUri && msg.filePreviewUri?.startsWith('data:image')) {
             content = [{ type: 'text', text: msg.text || "Image attached" }];
             content.push({ type: 'image_url', image_url: { url: msg.fileDataUri } });
           } else if (msg.sender === 'user' && msg.fileDataUri && !msg.filePreviewUri?.startsWith('data:image')) {
+            // For non-image files, describe the upload
             content = `User uploaded a file: ${msg.fileName}. User's message: ${msg.text}`;
           }
           return { role, content };
         });
       
+      // Construct the current user message for the API
       const currentUserMessageForAPI: any = { role: 'user', content: text };
       if (file && file.type.startsWith("image/")) {
           currentUserMessageForAPI.content = [
@@ -226,12 +231,12 @@ export function useChatController() {
         model: settings.model,
         messages: [
           { role: "system", content: "You are CyberChat AI, a helpful and slightly futuristic AI assistant created by Shan. Provide concise and informative responses. Your responses should be formatted using basic markdown (bold, italics, newlines, code blocks, etc.). Incorporate friendly emojis where appropriate in your final answer, but not in the reasoning part." },
-          ...apiMessageHistory,
-          currentUserMessageForAPI 
+          ...apiMessageHistory, // Add the filtered history
+          currentUserMessageForAPI // Add the current user's message
         ],
         stream: true,
-        http_referer: APP_SITE_URL,
-        x_title: APP_TITLE,      
+        http_referer: APP_SITE_URL, // Optional: For OpenRouter analytics
+        x_title: APP_TITLE,        // Optional: For OpenRouter analytics
       };
 
       const response = await fetch(OPENROUTER_API_URL, {
@@ -263,12 +268,14 @@ export function useChatController() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
+          // Stream finished
           break; 
         }
 
         buffer += decoder.decode(value, { stream: true });
         const eventSeparator = "\n\n";
         let eventEndIndex;
+        // Process server-sent events (SSE)
         while ((eventEndIndex = buffer.indexOf(eventSeparator)) !== -1) {
             const eventPart = buffer.substring(0, eventEndIndex);
             buffer = buffer.substring(eventEndIndex + eventSeparator.length);
@@ -276,9 +283,10 @@ export function useChatController() {
             if (eventPart.startsWith("data: ")) {
                 const jsonData = eventPart.substring(6).trim();
                 if (jsonData === "[DONE]") {
+                    // OpenAI-like signal for stream end
                     if (reader) await reader.cancel(); 
-                    reader = null;
-                    break; 
+                    reader = null; // Mark reader as cancelled/done
+                    break; // Exit inner while loop for SSE processing
                 }
                 try {
                     const chunkData = JSON.parse(jsonData);
@@ -287,14 +295,16 @@ export function useChatController() {
                         streamMessageUpdate(aiMessageId, contentChunk);
                         accumulatedText += contentChunk;
                     } else if (chunkData.choices && chunkData.choices[0].finish_reason) {
+                        // Handle finish reason (e.g., 'stop', 'length')
                         if(chunkData.choices[0].finish_reason === 'stop' || chunkData.choices[0].finish_reason === 'length') { 
                             if (reader) await reader.cancel();
-                            reader = null;
-                            break;
+                            reader = null; // Mark reader as cancelled/done
+                            break; // Exit inner while loop for SSE processing
                         }
                     }
                 } catch (e) {
                     console.error("Error parsing stream JSON:", jsonData, e);
+                    // Update message with error, but don't stop processing other potential chunks
                     setMessages(prev => prev.map(msg => msg.id === aiMessageId ? {
                         ...msg,
                         text: `Error: Stream parsing error. ${(e as Error).message}. Data: ${jsonData.substring(0,100)}...`,
@@ -303,7 +313,7 @@ export function useChatController() {
                 }
             }
         }
-        if (reader === null) break;
+        if (reader === null) break; // Exit outer while loop if reader was cancelled
       }
     } catch (error) {
       console.error("Error in handleSendMessage:", error);
@@ -335,16 +345,22 @@ export function useChatController() {
 
       if (isUncertain && !file) { // Don't search web if it was a file upload context primarily
         const originalUserMessage = messages.find(m => m.id === userMessageId);
-        const queryForSearch = refineSearchQuery(originalUserMessage?.text || text, messages);
+        const queryForSearch = refineSearchQueryForContext(originalUserMessage?.text || text, messages);
         
         if (queryForSearch) {
           setIsSearchingWeb(true);
-          updateMessage(aiMessageId, { text: `${finalAiText}\n\nSearching the web for more information...`, reasoning: placeholderReasoning });
+          // Update AI message to indicate web search is happening
+          updateMessage(aiMessageId, { 
+            text: `${finalAiText}\n\nSearching the web for more information about "${queryForSearch}"...`, 
+            reasoning: placeholderReasoning + ` Detected uncertainty, initiating web search for "${queryForSearch}".`
+          });
           try {
             const searchFlowResult = await smartWebSearch({ query: queryForSearch });
             const searchResultsMarkdownContent = searchFlowResult.searchResultsMarkdown;
-            const collapsibleWrapper = `\n\n:::collapsible Web Search Results\n${searchResultsMarkdownContent}\n:::`;
-            finalAiText += collapsibleWrapper;
+            
+            const collapsibleWrapper = `\n\n:::collapsible Web Search Results for "${queryForSearch}"\n${searchResultsMarkdownContent}\n:::`;
+            finalAiText += collapsibleWrapper; // Append search results to the original AI text
+            
           } catch (searchError) {
             console.error("Error during web search enhancement:", searchError);
             finalAiText += `\n\nAn error occurred while trying to search the web: ${(searchError as Error).message}`;
@@ -357,16 +373,18 @@ export function useChatController() {
       const endTime = Date.now();
       const durationInSeconds = parseFloat(((endTime - startTime) / 1000).toFixed(1));
 
+      // Final update to the AI message with all content
       setMessages(prev => {
         return prev.map(msg => {
           if (msg.id === aiMessageId) {
-            let currentText = finalAiText || msg.text;
+            let currentText = finalAiText || msg.text; // Use accumulated text, or existing if empty
             let currentType = msg.type || 'text';
             let currentReasoning = msg.reasoning || placeholderReasoning;
 
+            // If text is still a placeholder, it means no content was streamed or an error occurred before streaming
             if (currentText === "Thinking..." || currentText.startsWith("Processing") || currentText.startsWith("Searching")) {
                  currentText = (msg.type === 'error' && msg.text !== "Thinking...") ? msg.text : "No response generated or an issue occurred. Please check the API key and model settings.";
-                 if (msg.type !== 'error') currentType = 'error';
+                 if (msg.type !== 'error') currentType = 'error'; // Mark as error if no useful text
                  currentReasoning = msg.reasoning || "The AI service did not return a valid response. This could be due to network issues, incorrect API configuration, or problems with the AI model itself.";
             }
             
@@ -447,8 +465,9 @@ export function useChatController() {
       const durationInSeconds = parseFloat(((endTime - startTime) / 1000).toFixed(1));
       const reasoning = `The AI initiated a web search for "${query}", retrieved relevant snippets from search results using an external API (DuckDuckGo), and then synthesized this information into a coherent summary.`;
       
+      // Use the title for the collapsible section to match the query
       const collapsibleContent = result.searchResultsMarkdown;
-      const fullText = `Web search results for "${query}":\n\n:::collapsible Web Search Results\n${collapsibleContent}\n:::`;
+      const fullText = `Web search results for "${query}":\n\n:::collapsible Web Search Results for "${query}"\n${collapsibleContent}\n:::`;
 
       updateMessage(aiMessageId, {
         text: fullText, 
@@ -470,8 +489,14 @@ export function useChatController() {
       if (!baseErrorMessage.endsWith('.')) {
           displayedErrorMessage += '.';
       }
-      displayedErrorMessage += ' Data streams might be corrupted or the search module is offline.';
-      finalReasoning = `An error occurred while performing the web search for "${query}". The specific error was: "${baseErrorMessage}". This could be due to issues with the search API, network connectivity, or the formatting of results.`;
+      // More user-friendly error based on instructions
+      if (baseErrorMessage.includes("Unable to find current information online") || baseErrorMessage.includes("No relevant information found online")) {
+          displayedErrorMessage = "Unable to find current information online. Please check a reliable news source.";
+          finalReasoning = `The web search for "${query}" did not yield relevant results based on the filtering criteria. The external API may not have found matching content or the content did not meet recency/keyword requirements.`;
+      } else {
+          displayedErrorMessage = `An error occurred while searching online.`;
+           finalReasoning = `An error occurred while performing the web search for "${query}". The specific error was: "${baseErrorMessage}". This could be due to issues with the search API, network connectivity, or the formatting of results.`;
+      }
       
       updateMessage(aiMessageId, {
         text: displayedErrorMessage, 
@@ -480,9 +505,9 @@ export function useChatController() {
         duration: durationInSeconds
       });
       toast({
-        title: "Web Search Failed",
-        description: baseErrorMessage, 
-        variant: "destructive",
+        title: "Web Search Information", // Changed from "Failed" to be more neutral for "no results"
+        description: baseErrorMessage.includes("Unable to find current information online") ? "No current information found via web search." : "An error occurred during web search.", 
+        variant: baseErrorMessage.includes("Unable to find current information online") ? "default" : "destructive",
       });
     } finally {
       setIsSearchingWeb(false);
