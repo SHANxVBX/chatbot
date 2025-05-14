@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useRef, useEffect } from "react";
@@ -21,6 +22,7 @@ export function ChatInputBar({ onSendMessage, isLoading, onClearChat }: ChatInpu
   const [selectedFile, setSelectedFile] = useState<{ dataUri: string; name: string; type: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputBarRef = useRef<HTMLDivElement>(null); // Ref for the entire input bar
   const { toast } = useToast();
 
   useEffect(() => {
@@ -73,9 +75,23 @@ export function ChatInputBar({ onSendMessage, isLoading, onClearChat }: ChatInpu
       reader.readAsDataURL(file);
     }
   };
+
+  const handleTextareaFocus = () => {
+    // On mobile, when textarea is focused, the keyboard might cover it.
+    // Attempt to scroll the input bar into view.
+    if (typeof window !== "undefined" && window.innerWidth < 768) { // Tailwind's 'sm' breakpoint is 640px, md is 768px. Use 768 to target typical mobile/small tablet.
+      // Using a timeout can help ensure the keyboard has started to animate in
+      // and the viewport has resized before attempting to scroll.
+      setTimeout(() => {
+        if (inputBarRef.current) {
+          inputBarRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+        }
+      }, 150); // Delay might need adjustment based on testing across devices.
+    }
+  };
   
   return (
-    <div className="border-t border-border/30 bg-background/70 p-2 sm:p-3 md:p-4 shadow-md backdrop-blur-md">
+    <div ref={inputBarRef} className="border-t border-border/30 bg-background/70 p-2 sm:p-3 md:p-4 shadow-md backdrop-blur-md">
       {selectedFile && (
         <div className="mb-2 flex items-center justify-between rounded-md border border-primary/30 bg-primary/10 p-2 text-sm text-primary">
           <span>File: {selectedFile.name}</span>
@@ -98,6 +114,7 @@ export function ChatInputBar({ onSendMessage, isLoading, onClearChat }: ChatInpu
           value={inputText}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
+          onFocus={handleTextareaFocus} // Added onFocus handler
           placeholder="Transmit your query... (Shift+Enter for new line)"
           className="flex-1 resize-none rounded-lg border-border/50 bg-input/50 p-3 text-base shadow-inner focus:ring-primary/50 glassmorphic-input max-h-40 overflow-y-auto"
           rows={1}
@@ -145,3 +162,4 @@ export function ChatInputBar({ onSendMessage, isLoading, onClearChat }: ChatInpu
     </div>
   );
 }
+
