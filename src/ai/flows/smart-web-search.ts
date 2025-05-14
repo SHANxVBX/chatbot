@@ -88,8 +88,17 @@ async function webSearch(query: string): Promise<string> {
   try {
     const response = await fetch(searchUrl);
     if (!response.ok) {
-      console.error(`DuckDuckGo API error: ${response.status} ${response.statusText}`);
-      return 'An error occurred while searching online.';
+      const errorBody = await response.text().catch(() => 'N/A');
+      const errorMessage = `DuckDuckGo API error: Status ${response.status} ${response.statusText}. Body: ${errorBody}`;
+      console.error(errorMessage);
+
+      let userFacingError = 'An error occurred while searching online.';
+      if (response.status >= 400 && response.status < 500) {
+          userFacingError = `Error with search request (Status: ${response.status}).`;
+      } else if (response.status >= 500) {
+          userFacingError = `Search service temporarily unavailable (Status: ${response.status}).`;
+      }
+      return userFacingError;
     }
     const data = (await response.json()) as DuckDuckGoResponse;
 
