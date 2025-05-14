@@ -1,4 +1,3 @@
-
 "use client";
 
 import type { AISettings } from "@/lib/types";
@@ -33,7 +32,7 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
     const formData = new FormData(event.currentTarget);
     const newSettings: AISettings = {
       apiKey: formData.get("apiKey") as string,
-      model: formData.get("model") as string,
+      model: formData.get("model") as string, // This will correctly get the model name even if it was hidden
       provider: formData.get("provider") as string,
     };
     onSettingsChange(newSettings);
@@ -85,19 +84,26 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
               <Cog className="h-4 w-4 text-primary/80" />
               Model
             </Label>
-            <div className={cn(!isCreatorLoggedIn && "blur-[4px] select-none pointer-events-none")}>
-              <Input
-                id="model"
-                name="model"
-                defaultValue={settings.model}
-                placeholder={isCreatorLoggedIn ? "e.g., openrouter/auto" : "Set by Creator"}
-                className="glassmorphic-input"
-                readOnly={!isCreatorLoggedIn}
-                disabled={!isCreatorLoggedIn}
-                aria-hidden={!isCreatorLoggedIn}
-                tabIndex={!isCreatorLoggedIn ? -1 : undefined} // Prevent tabbing when blurred
-              />
-            </div>
+            {/* Hidden input to hold the actual model value for form submission when creator is logged in */}
+            {isCreatorLoggedIn && (
+                <Input
+                    type="hidden"
+                    name="model"
+                    value={settings.model}
+                />
+            )}
+            <Input
+              id="model"
+              name={isCreatorLoggedIn ? "model" : "model_display"} // Use a different name when not logged in to avoid submitting "Set by Creator"
+              value={isCreatorLoggedIn ? settings.model : "Set by Creator"}
+              onChange={isCreatorLoggedIn ? (e) => onSettingsChange({...settings, model: e.target.value}) : undefined}
+              placeholder={isCreatorLoggedIn ? "e.g., openrouter/auto" : "Set by Creator"}
+              className="glassmorphic-input"
+              readOnly={!isCreatorLoggedIn}
+              disabled={!isCreatorLoggedIn}
+              aria-hidden={!isCreatorLoggedIn}
+              tabIndex={!isCreatorLoggedIn ? -1 : undefined}
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="provider" className="flex items-center gap-1 text-sm">
