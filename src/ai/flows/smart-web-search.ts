@@ -1,16 +1,15 @@
 'use server';
-// Using node fetch as the standard library 'fetch' is not available in Node.js.
-import fetch from 'node-fetch';
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
-
 /**
- * @fileOverview This file implements a Genkit flow for AI-enhanced web search.
+ * @fileOverview This file implements a Genkit flow for AI-enhanced web search using DuckDuckGo.
  *
- * - smartWebSearch - A function that performs a web search and summarizes the results.
+ * - smartWebSearch - A function that performs a web search and returns formatted results.
  * - SmartWebSearchInput - The input type for the smartWebSearch function.
  * - SmartWebSearchOutput - The return type for the smartWebSearch function.
  */
+
+import fetch from 'node-fetch'; // Using node-fetch as standard fetch might not be available in all Node.js environments for Genkit flows
+import {ai} from '@/ai/genkit';
+import {z} from 'genkit';
 
 const SmartWebSearchInputSchema = z.object({
   query: z.string().describe('The search query to use for web search.'),
@@ -18,7 +17,11 @@ const SmartWebSearchInputSchema = z.object({
 export type SmartWebSearchInput = z.infer<typeof SmartWebSearchInputSchema>;
 
 const SmartWebSearchOutputSchema = z.object({
-  summary: z.string().describe('A summary of the web search results.'),
+  searchResultsMarkdown: z
+    .string()
+    .describe(
+      'Formatted markdown string of search results, or a message indicating no results/error.'
+    ),
 });
 export type SmartWebSearchOutput = z.infer<typeof SmartWebSearchOutputSchema>;
 
@@ -26,40 +29,61 @@ export async function smartWebSearch(input: SmartWebSearchInput): Promise<SmartW
   return smartWebSearchFlow(input);
 }
 
-async function webSearch(query: string): Promise<string[]> {
-  // Replace with your preferred search API and API key.
-  const apiKey = process.env.SERPAPI_API_KEY; 
-  if (!apiKey) {
-    throw new Error(
-      'The environment variable SERPAPI_API_KEY must be set to use web search.'
-    );
-  }
-  const apiUrl = `https://serpapi.com/search?q=${encodeURIComponent(query)}&api_key=${apiKey}`;
-
-  try {
-    const response = await fetch(apiUrl);
-    const data = await response.json() as any; // Add 'as any' to handle unknown structure
-
-    if (!data.organic_results) {
-      console.warn('No search results found.', data);
-      return [];
-    }
-
-    // Extract snippets from the search results.
-    const snippets = data.organic_results.map((result: any) => result.snippet);
-    return snippets;
-  } catch (error) {
-    console.error('Error performing web search:', error);
-    return [];
-  }
+interface DuckDuckGoTopic {
+  Result?: string;
+  Icon?: { URL?: string; Height?: number; Width?: number };
+  FirstURL: string;
+  Text: string;
 }
 
-const summarizePrompt = ai.definePrompt({
-  name: 'summarizePrompt',
-  input: {schema: z.object({results: z.string().describe('Search results')})},
-  output: {schema: SmartWebSearchOutputSchema},
-  prompt: `Summarize the following search results:\n\n{{results}}`,
-});
+interface DuckDuckGoResponse {
+  AbstractText?: string;
+  AbstractSource?: string;
+  AbstractURL?: string;
+  Image?: string;
+  Heading?: string;
+  Answer?: string;
+  AnswerType?: string;
+  Definition?: string;
+  DefinitionSource?: string;
+  DefinitionURL?: string;
+  RelatedTopics?: DuckDuckGoTopic[];
+  Results?: DuckDuckGoTopic[];
+  Type?: 'A' | 'D' | 'C' | 'E' | 'I' | 'L' | 'M' | 'N' | 'P' | 'S' | 'R' | 'T' | 'X' | 'Z'; // A=Article, D=Disambiguation, C=Category, N=Name, E=Exclusive, I=Image
+}
+
+
+async function webSearch(query: string): Promise<string> {
+  const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+
+  try {
+    const response = await fetch(searchUrl);
+    if (!response.ok) {
+      console.error(`DuckDuckGo API error: ${response.status} ${response.statusText}`);
+      return 'An error occurred while searching online.';
+    }
+    const data = (await response.json()) as DuckDuckGoResponse;
+
+    const relevantTopics = data.RelatedTopics?.filter(topic => topic.FirstURL && topic.Text).slice(0, 3) || [];
+
+    if (relevantTopics.length === 0) {
+      return 'No relevant information found online.';
+    }
+
+    const markdownResults = relevantTopics
+      .map((topic, index) => {
+        const title = topic.Text.split(' - ')[0]; // Often Text is "Title - Source", take the title part
+        const snippet = topic.Text.substring(0, 150) + (topic.Text.length > 150 ? '...' : '');
+        return `${index + 1}. [${title}](${topic.FirstURL})\n   *${snippet}* [Read more](${topic.FirstURL})`;
+      })
+      .join('\n\n');
+
+    return markdownResults;
+  } catch (error) {
+    console.error('Error performing web search with DuckDuckGo:', error);
+    return 'An error occurred while searching online.';
+  }
+}
 
 const smartWebSearchFlow = ai.defineFlow(
   {
@@ -67,11 +91,8 @@ const smartWebSearchFlow = ai.defineFlow(
     inputSchema: SmartWebSearchInputSchema,
     outputSchema: SmartWebSearchOutputSchema,
   },
-  async input => {
-    const searchResults = await webSearch(input.query);
-    const results = searchResults.join('\n\n');
-    const {output} = await summarizePrompt({results});
-    return output!;
+  async (input: SmartWebSearchInput) => {
+    const searchResultsMarkdown = await webSearch(input.query);
+    return { searchResultsMarkdown };
   }
 );
-

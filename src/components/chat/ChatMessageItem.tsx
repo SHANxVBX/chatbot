@@ -6,35 +6,61 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { User, Bot, AlertTriangle, FileText, Search, CheckCircle, BrainCog } from "lucide-react";
 import Image from "next/image";
+import React from "react";
 
-interface ChatMessageItemProps {
-  message: Message;
-}
+// Basic Markdown-like rendering for newlines, bold, italics, code, and custom collapsible sections
+const renderText = (text: string): React.ReactNode[] => {
+  if (!text) return [];
 
-// Basic Markdown-like rendering for newlines, bold, and italics
-const renderText = (text: string) => {
-  if (!text) return null;
-  const parts = text.split(/(\n|\*\*.*?\*\*|\*.*?\*|`.*?`|```[\s\S]*?```)/g).filter(Boolean);
-  return parts.map((part, index) => {
-    if (part === '\n') {
-      return <br key={`br-${index}`} />;
+  // Regex to split by markdown and custom collapsible syntax
+  // Groups: 1=newline, 2=bold, 3=italic, 4=inline_code, 5=code_block, 6=collapsible_full, 7=collapsible_title, 8=collapsible_content
+  const collapsibleRegex = /^(:::collapsible\s+(.+?)\n([\s\S]*?):::)$/m;
+  const markdownElementsRegex = /(\n)|(\*\*.*?\*\*)|(\*.*?\*)|(`.+?`)|(```[\s\S]+?```)/g;
+
+  // First, handle collapsible sections as whole blocks
+  const parts = text.split(new RegExp(`(${collapsibleRegex.source})`, 'gm')).filter(Boolean);
+
+  return parts.flatMap((part, index) => {
+    const collapsibleMatch = part.match(collapsibleRegex);
+    if (collapsibleMatch) {
+      const title = collapsibleMatch[2];
+      const content = collapsibleMatch[3];
+      return (
+        <details
+          key={`details-${index}`}
+          className="my-2 p-3 bg-primary/10 dark:bg-primary/20 rounded-md shadow-md border border-primary/20 dark:border-primary/30"
+        >
+          <summary className="font-semibold cursor-pointer text-sm text-primary dark:text-primary-foreground/80 hover:text-primary/80 dark:hover:text-primary-foreground">
+            {title}
+          </summary>
+          <div className="mt-2 text-xs prose-sm dark:prose-invert max-w-none prose-p:text-foreground/90 prose-li:text-foreground/90 prose-a:text-accent hover:prose-a:text-accent/80">
+             {/* Recursively render content within collapsible ensuring it's an array */}
+            {renderText(content)}
+          </div>
+        </details>
+      );
     }
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={`strong-${index}`}>{part.substring(2, part.length - 2)}</strong>;
-    }
-    if (part.startsWith('*') && part.endsWith('*')) {
-      return <em key={`em-${index}`}>{part.substring(1, part.length - 1)}</em>;
-    }
-    if (part.startsWith('```') && part.endsWith('```')) {
-      return <pre key={`pre-${index}`} className="bg-muted/50 p-2 rounded-md my-1 text-sm overflow-x-auto"><code >{part.substring(3, part.length - 3)}</code></pre>;
-    }
-    if (part.startsWith('`') && part.endsWith('`')) {
-      return <code key={`code-${index}`} className="bg-muted/50 px-1 py-0.5 rounded text-sm">{part.substring(1, part.length - 1)}</code>;
-    }
-    // Basic emoji handling (this is very simplistic and might need a library for extensive support)
-    // For now, let's assume emojis are passed as is.
-    // You can enhance this to parse :emoji_codes: if needed.
-    return <span key={`text-${index}`}>{part}</span>;
+
+    // If not a collapsible block, process for other markdown elements
+    return part.split(markdownElementsRegex).filter(Boolean).map((subPart, subIndex) => {
+      const key = `part-${index}-sub-${subIndex}`;
+      if (subPart === '\n') {
+        return <br key={key} />;
+      }
+      if (subPart.startsWith('**') && subPart.endsWith('**')) {
+        return <strong key={key}>{subPart.substring(2, subPart.length - 2)}</strong>;
+      }
+      if (subPart.startsWith('*') && subPart.endsWith('*')) {
+        return <em key={key}>{subPart.substring(1, subPart.length - 1)}</em>;
+      }
+      if (subPart.startsWith('```') && subPart.endsWith('```')) {
+        return <pre key={key} className="bg-muted/50 p-2 rounded-md my-1 text-sm overflow-x-auto"><code>{subPart.substring(3, subPart.length - 3)}</code></pre>;
+      }
+      if (subPart.startsWith('`') && subPart.endsWith('`')) {
+        return <code key={key} className="bg-muted/50 px-1 py-0.5 rounded text-sm">{subPart.substring(1, subPart.length - 1)}</code>;
+      }
+      return <span key={key}>{subPart}</span>;
+    });
   });
 };
 
@@ -96,7 +122,7 @@ export function ChatMessageItem({ message }: ChatMessageItemProps) {
         )}
         <Card
           className={cn(
-            "w-fit rounded-xl shadow-lg", // Use w-fit for the bubble to wrap content
+            "w-fit rounded-xl shadow-lg", 
             isUser
               ? "bg-primary/80 text-primary-foreground rounded-br-none glassmorphic"
               : "bg-card/80 text-card-foreground rounded-bl-none glassmorphic",
