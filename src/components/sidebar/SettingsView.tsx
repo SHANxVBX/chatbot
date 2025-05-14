@@ -33,16 +33,14 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
     const formData = new FormData(event.currentTarget);
     const newSettings: AISettings = {
       apiKey: formData.get("apiKey") as string,
-      model: formData.get("model") as string, // This will correctly get the model name
-      provider: formData.get("provider") as string, // This will correctly get the provider name
+      model: formData.get("model") as string, 
+      provider: formData.get("provider") as string, 
     };
     onSettingsChange(newSettings);
-    toast({
-      title: "Settings Saved",
-      description: "AI provider settings have been updated.",
-      variant: "default",
-    });
+    // Toast for settings change is handled in useChatController's handleSettingsChange
   };
+
+  const isApiKeySet = settings.apiKey && settings.apiKey.trim() !== "";
 
   return (
     <Card className="glassmorphic border-none shadow-none">
@@ -73,8 +71,8 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
               id="apiKey"
               name="apiKey"
               type={isCreatorLoggedIn ? "text" : "password"}
-              defaultValue={isCreatorLoggedIn ? settings.apiKey : "**********"}
-              placeholder={isCreatorLoggedIn ? "Enter your API key" : "Set by Creator"}
+              defaultValue={isCreatorLoggedIn ? settings.apiKey : (isApiKeySet ? "**********" : "")}
+              placeholder={isCreatorLoggedIn ? "Enter your API key" : (isApiKeySet ? "Set by Creator" : "Not Configured")}
               className="glassmorphic-input"
               readOnly={!isCreatorLoggedIn}
               disabled={!isCreatorLoggedIn}
@@ -85,20 +83,12 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
               <Cog className="h-4 w-4 text-primary/80" />
               Model
             </Label>
-            {/* Hidden input to hold the actual model value for form submission when creator is logged in */}
-            {isCreatorLoggedIn && (
-                <Input
-                    type="hidden"
-                    name="model"
-                    value={settings.model}
-                />
-            )}
             <Input
               id="model"
-              name={isCreatorLoggedIn ? "model" : "model_display"} // Use a different name for display when not logged in
-              value={isCreatorLoggedIn ? settings.model : "Permission Denied to View"}
+              name="model"
+              value={isCreatorLoggedIn ? settings.model : (isApiKeySet && settings.model ? settings.model : "Not Configured")}
               onChange={isCreatorLoggedIn ? (e) => onSettingsChange({...settings, model: e.target.value}) : undefined}
-              placeholder={isCreatorLoggedIn ? "e.g., openrouter/auto" : "Permission Denied to View"}
+              placeholder={isCreatorLoggedIn ? "e.g., qwen/qwen3-235b-a22b:free" : (isApiKeySet ? "Set by Creator" : "Not Configured")}
               className={cn("glassmorphic-input", !isCreatorLoggedIn && "select-none pointer-events-none")}
               readOnly={!isCreatorLoggedIn}
               disabled={!isCreatorLoggedIn}
@@ -109,22 +99,14 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
               <Server className="h-4 w-4 text-primary/80" /> 
               Provider
             </Label>
-             {/* Hidden input to hold the actual provider value for form submission by creator */}
-            {isCreatorLoggedIn && (
-                <Input
-                    type="hidden"
-                    name="provider"
-                    value={settings.provider} // This ensures "OpenRouter" is submitted
-                />
-            )}
             <Input
               id="provider"
-              name={isCreatorLoggedIn ? "provider" : "provider_display"} // Use different name for display when not logged in
-              value={isCreatorLoggedIn ? settings.provider : "Permission Denied to View"}
-              placeholder={isCreatorLoggedIn ? "e.g., OpenRouter" : "Permission Denied to View"}
+              name="provider" 
+              value={isCreatorLoggedIn ? settings.provider : (isApiKeySet && settings.provider ? settings.provider : "Not Configured")}
+              placeholder={isCreatorLoggedIn ? "e.g., OpenRouter" : (isApiKeySet ? "Set by Creator" : "Not Configured")}
               className={cn("glassmorphic-input", !isCreatorLoggedIn && "select-none pointer-events-none")}
               readOnly // Provider is not user-editable in this app
-              disabled={!isCreatorLoggedIn} // Visually and interactively disabled for non-creators
+              disabled={!isCreatorLoggedIn} 
             />
           </div>
           {isCreatorLoggedIn && (

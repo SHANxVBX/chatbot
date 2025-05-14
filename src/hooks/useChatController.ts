@@ -25,8 +25,8 @@ const uncertaintyPhrases = [
 const clientStopWords = new Set(['a', 'an', 'the', 'is', 'are', 'was', 'were', 'what', 'who', 'when', 'where', 'why', 'how', 'of', 'for', 'in', 'on', 'at', 'by']);
 
 // Hardcoded constants for default settings
-const CODE_DEFAULT_API_KEY = "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";
-const CODE_DEFAULT_MODEL = "qwen/qwen3-235b-a22b:free";
+const CODE_DEFAULT_API_KEY = ""; // API Key must be set by creator
+const CODE_DEFAULT_MODEL = "qwen/qwen3-235b-a22b:free"; // Default model
 const CODE_DEFAULT_PROVIDER = "OpenRouter";
 
 function refineSearchQueryForContext(originalQuery: string, chatHistory: Message[]): string {
@@ -183,6 +183,18 @@ export function useChatController() {
     
     setIsLoading(true);
     const startTime = Date.now();
+    
+    const currentActiveSettings = settings;
+    if (!currentActiveSettings.apiKey || currentActiveSettings.apiKey.trim() === "") {
+      addMessage(
+        "AI Provider API Key is not configured. A creator needs to log in and set it up via the settings panel for the AI to function.",
+        "ai",
+        "error"
+      );
+      setIsLoading(false);
+      return; 
+    }
+    
     const aiMessageId = addMessage("Thinking...", "ai", "text");
     setCurrentAIMessageId(aiMessageId);
     
@@ -228,23 +240,13 @@ export function useChatController() {
         return;
     }
 
-    const currentActiveSettings = settings;
-    if (!currentActiveSettings.apiKey || currentActiveSettings.apiKey.trim() === "") {
-      finalReasoningForUpdate = "API key check failed: The API key is missing. AI communication cannot proceed without a valid API key.";
-      toast({ title: "API Key Missing", description: "OpenRouter API key is not configured.", variant: "destructive" });
-      updateMessage(aiMessageId, { text: "API key not set. Please configure your OpenRouter API key in the AI Provider Settings or contact the administrator if this issue persists.", reasoning: finalReasoningForUpdate, duration: parseFloat(((Date.now() - startTime) / 1000).toFixed(1)), type: "error" });
-      setIsLoading(false);
-      setCurrentAIMessageId(null);
-      return;
-    }
-
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
     let operationCompletedSuccessfully = false;
     let accumulatedText = "";
     let isFirstChunkOfInitialResponse = true;
 
     try {
-      finalReasoningForUpdate = `Preparing API message history for model: ${currentActiveSettings.model}...`;
+      finalReasoningForUpdate = `Preparing API message history...`;
       updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
 
       const apiMessageHistory = messages
@@ -289,7 +291,7 @@ export function useChatController() {
         x_title: APP_TITLE, 
       };
       
-      finalReasoningForUpdate = `Sending request to AI model...`;
+      finalReasoningForUpdate = `Sending request to AI...`;
       updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
 
       const response = await fetch(OPENROUTER_API_URL, {
@@ -370,7 +372,7 @@ export function useChatController() {
       updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
 
 
-      const lowercasedAiText = finalAiTextForDisplay.toLowerCase(); // Use finalAiTextForDisplay which might be error message
+      const lowercasedAiText = finalAiTextForDisplay.toLowerCase(); 
       const isUncertain = uncertaintyPhrases.some(phrase => lowercasedAiText.includes(phrase)) && messageTypeForFinalUpdate !== 'error';
 
 
@@ -459,7 +461,7 @@ export function useChatController() {
             finalAiTextForDisplay = summarizedText;
             finalReasoningForUpdate += ` AI summary stream finished.`;
           } else {
-            finalAiTextForDisplay = finalAiTextForDisplay + `\n\nI found some information online for "${queryForSearch}", but had trouble summarizing it.`; // Keep original uncertain response + note
+            finalAiTextForDisplay = finalAiTextForDisplay + `\n\nI found some information online for "${queryForSearch}", but had trouble summarizing it.`; 
             finalReasoningForUpdate += ` Summarization did not yield text. Displaying previous response with search note.`;
           }
           finalAiTextForDisplay += `\n\n:::collapsible Web Search Results for "${queryForSearch}"\n${searchResultsMarkdownContent}\n:::`;
@@ -473,7 +475,7 @@ export function useChatController() {
         setIsSearchingWeb(false);
       } else if (!isUncertain) {
         // finalReasoningForUpdate already ends with "AI response stream finished."
-      } else if (isUncertain && messageTypeForFinalUpdate !== 'error') { // Uncertain but not an error from empty stream
+      } else if (isUncertain && messageTypeForFinalUpdate !== 'error') { 
          finalReasoningForUpdate += ` Web search not performed (not creator or file attached, or initial response was already an error).`;
          updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
       }
@@ -515,6 +517,16 @@ export function useChatController() {
   };
 
   const handleFileUpload = async (fileDataUri: string, fileName: string, fileType: string) => {
+    const currentActiveSettings = settings;
+    if (!currentActiveSettings.apiKey || currentActiveSettings.apiKey.trim() === "") {
+      addMessage(
+        "AI Provider API Key is not configured. File processing requires the API key. A creator needs to log in and set it up.",
+        "ai",
+        "error"
+      );
+      return;
+    }
+
     addMessage(`Processing ${fileName} for summarization...`, "system", "text");
     setIsLoading(true);
     const startTime = Date.now();
@@ -539,7 +551,7 @@ export function useChatController() {
     } catch (error: any) {
       error.startTime = startTime;
       reasoning = `Error during Genkit summarization of "${fileName}".`;
-      updateMessage(aiMessageId, { reasoning }); // Update reasoning before calling handleApiError
+      updateMessage(aiMessageId, { reasoning }); 
       await handleApiError(error, aiMessageId, `summarizing file "${fileName}" with Genkit`);
     } finally {
       setIsLoading(false);
@@ -556,6 +568,16 @@ export function useChatController() {
       });
       return;
     }
+    const currentActiveSettings = settings;
+    if (!currentActiveSettings.apiKey || currentActiveSettings.apiKey.trim() === "") {
+       addMessage(
+        "AI Provider API Key is not configured for web search. A creator needs to log in and set it up.",
+        "ai",
+        "error"
+      );
+      return;
+    }
+
 
     addMessage(`Initiating web search for: "${query}"`, "user", "text");
     setIsSearchingWeb(true);
@@ -579,7 +601,7 @@ export function useChatController() {
     } catch (error: any) {
       error.startTime = startTime;
       reasoning = `Error during Genkit web search for "${query}".`;
-      updateMessage(aiMessageId, { reasoning }); // Update reasoning before calling handleApiError
+      updateMessage(aiMessageId, { reasoning }); 
       await handleApiError(error, aiMessageId, `web search for "${query}" with Genkit`);
     } finally {
       setIsSearchingWeb(false);
@@ -590,19 +612,16 @@ export function useChatController() {
 
   const handleSettingsChange = (newSettings: AISettings) => {
     setSettings(newSettings);
-    // console.log("Settings updated. New API Key:", newSettings.apiKey, "New Model:", newSettings.model);
-    // toast({ title: "Settings Updated", description: "AI provider settings have been locally applied." });
     if (isCreatorLoggedIn) {
-      // This is where we would persist if needed, but for now, it's local state.
-      // To make them new defaults, constants above would need manual update in code.
-      console.log("SETTINGS CHANGED BY CREATOR (manual update to constants in useChatController.ts needed if these should be new defaults):");
-      console.log("New API Key:", newSettings.apiKey);
-      console.log("New Model:", newSettings.model);
-      toast({ 
-        title: "Settings Updated & Applied", 
-        description: `Locally applied. For these to be the new app defaults, constants in useChatController.ts need manual update.`,
+      toast({
+        title: "Settings Applied for Session",
+        description: `API Key and Model updated. To make these the new defaults for all users, please inform the AI assistant to update the source code.`,
         duration: 10000 
       });
+      console.log("CREATOR SETTINGS CHANGED (APPLIED FOR CURRENT SESSION):");
+      console.log("New API Key:", newSettings.apiKey);
+      console.log("New Model:", newSettings.model);
+      console.log("To make these permanent defaults for all users, copy these values and ask the AI assistant (me) to update the application's default configuration in the source code.");
     }
   };
 
