@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -57,7 +58,7 @@ export function useChatController() {
   const { isCreatorLoggedIn } = useAuth(); 
 
   const [hardcodedDefaultSettings, setHardcodedDefaultSettings] = useState<AISettings>({
-    apiKey: "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", 
+    apiKey: "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", 
     model: "qwen/qwen3-235b-a22b:free",
     provider: "OpenRouter"
   });
@@ -69,14 +70,16 @@ export function useChatController() {
       if (storedSettings) {
         try {
           const parsedSettings = JSON.parse(storedSettings);
+          // Merge with hardcoded defaults to ensure all fields are present,
+          // but prioritize stored settings. The current hardcodedDefaultSettings state is used here.
           return { ...hardcodedDefaultSettings, ...parsedSettings };
         } catch (e) {
           console.error("Failed to parse settings from localStorage, using defaults.", e);
-          return hardcodedDefaultSettings;
+          return hardcodedDefaultSettings; // Use the current state of hardcodedDefaultSettings
         }
       }
     }
-    return hardcodedDefaultSettings;
+    return hardcodedDefaultSettings; // Use the current state of hardcodedDefaultSettings
   });
   
   const [isUpdateFromBroadcast, setIsUpdateFromBroadcast] = useState(false);
@@ -131,7 +134,7 @@ export function useChatController() {
           console.log('Received settings update from broadcast channel:', newSettingsFromBroadcast);
           setIsUpdateFromBroadcast(true); 
           setSettings(newSettingsFromBroadcast);
-          // Update hardcodedDefaultSettings as well if the broadcasted settings are considered the new "default"
+          // Update hardcodedDefaultSettings state as well if the broadcasted settings are considered the new "default"
           // This ensures that if a creator updates settings, it becomes the new base for all users.
           setHardcodedDefaultSettings(newSettingsFromBroadcast); 
         }
@@ -142,7 +145,7 @@ export function useChatController() {
       channel.removeEventListener('message', handleMessage);
       channel.close();
     };
-  }, [settings]); // Removed hardcodedDefaultSettings dependency here as it is now updated inside
+  }, [settings]); 
 
   useEffect(() => {
     if (typeof window !== "undefined") {
