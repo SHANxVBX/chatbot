@@ -15,8 +15,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const CREATOR_AUTH_KEY = 'creatorLoggedIn';
 // Ensure these are exactly as required.
 const CREATOR_USERNAME = "pannikutty";
-// This is the SHA-256 hash of "Hxp652728"
-const HASHED_CREATOR_PASSWORD = "2d8f68c30e08f12b048a43e5658d8e8b1098f3688e576f2e0a5b7774819a5a07";
+// This is the new SHA-256 hash provided by the user.
+const HASHED_CREATOR_PASSWORD = "d6e8c7a4a4b1a6f7a7f1b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8";
 
 // Helper function to hash a string using SHA-256 (client-side focused)
 async function sha256(str: string): Promise<string> {
@@ -53,27 +53,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const hashed_password_input = await sha256(trimmedPassword);
     
-    console.log("Attempting login with:");
-    console.log("Input Username (trimmed):", `"${trimmedUsername}"`);
-    console.log("Expected Username:", `"${CREATOR_USERNAME}"`);
-    console.log("Input Password Hash:", `"${hashed_password_input}"`);
-    console.log("Expected Password Hash:", `"${HASHED_CREATOR_PASSWORD}"`);
+    // console.log("Attempting login with:");
+    // console.log("Input Username (trimmed):", `"${trimmedUsername}"`);
+    // console.log("Expected Username:", `"${CREATOR_USERNAME}"`);
+    // console.log("Input Password Hash:", `"${hashed_password_input}"`);
+    // console.log("Expected Password Hash:", `"${HASHED_CREATOR_PASSWORD}"`);
 
     const usernameMatch = trimmedUsername === CREATOR_USERNAME;
     const passwordMatch = hashed_password_input === HASHED_CREATOR_PASSWORD;
 
-    console.log("Username Match:", usernameMatch);
-    console.log("Password Match:", passwordMatch);
+    // console.log("Username Match:", usernameMatch);
+    // console.log("Password Match:", passwordMatch);
 
     if (usernameMatch && passwordMatch) {
       if (typeof window !== 'undefined') {
         localStorage.setItem(CREATOR_AUTH_KEY, 'true');
       }
       setIsCreatorLoggedIn(true);
-      console.log("Login successful");
+      // console.log("Login successful");
       return true;
     }
-    console.log("Login failed");
+    // console.log("Login failed");
     return false;
   }, [setIsCreatorLoggedIn]);
 
