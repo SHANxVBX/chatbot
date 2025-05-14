@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import type { Message, AISettings, MessageSender } from "@/lib/types";
 import { summarizeUpload } from "@/ai/flows/summarize-upload";
 import { smartWebSearch } from "@/ai/flows/smart-web-search";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 
 const CHAT_STORAGE_KEY = "cyberchat-ai-history";
 const SETTINGS_STORAGE_KEY = "cyberchat-ai-settings";

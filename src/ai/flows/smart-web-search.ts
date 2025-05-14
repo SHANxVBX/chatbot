@@ -1,8 +1,8 @@
+'use server';
 // Using node fetch as the standard library 'fetch' is not available in Node.js.
 import fetch from 'node-fetch';
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-'use server';
 
 /**
  * @fileOverview This file implements a Genkit flow for AI-enhanced web search.
@@ -38,7 +38,7 @@ async function webSearch(query: string): Promise<string[]> {
 
   try {
     const response = await fetch(apiUrl);
-    const data = await response.json();
+    const data = await response.json() as any; // Add 'as any' to handle unknown structure
 
     if (!data.organic_results) {
       console.warn('No search results found.', data);
@@ -74,3 +74,4 @@ const smartWebSearchFlow = ai.defineFlow(
     return output!;
   }
 );
+
