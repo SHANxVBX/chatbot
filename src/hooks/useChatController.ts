@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -13,8 +12,8 @@ const SETTINGS_STORAGE_KEY = "cyberchat-ai-settings";
 const SETTINGS_BROADCAST_CHANNEL_NAME = "cyberchat-ai-settings-channel";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const APP_SITE_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:9002"; // Or your deployed site URL
-const APP_TITLE = "CyberChat AI by Shan"; // Your application's name or title
+const APP_SITE_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:9002"; 
+const APP_TITLE = "CyberChat AI by Shan"; 
 
 const uncertaintyPhrases = [
   "i don't know", "i'm not sure", "i am not sure", "i'm unsure", "unsure",
@@ -49,42 +48,59 @@ function refineSearchQueryForContext(originalQuery: string, chatHistory: Message
 
 
 export function useChatController() {
+  // Primitive states first
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentAIMessageId, setCurrentAIMessageId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSearchingWeb, setIsSearchingWeb] = useState(false);
   const [isCreatorModeActive, setIsCreatorModeActive] = useState(false);
-  const { toast } = useToast();
-  const { isCreatorLoggedIn } = useAuth(); 
+  const [isUpdateFromBroadcast, setIsUpdateFromBroadcast] = useState(false);
 
+  // Then custom hooks
+  const { toast } = useToast();
+  const { isCreatorLoggedIn } = useAuth();
+
+  // Then state that might depend on other state or constants
   const [hardcodedDefaultSettings, setHardcodedDefaultSettings] = useState<AISettings>({
-    apiKey: "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", 
+    apiKey: "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",
     model: "qwen/qwen3-235b-a22b:free",
     provider: "OpenRouter"
   });
 
-
   const [settings, setSettings] = useState<AISettings>(() => {
+    let effectiveSettings = { ...hardcodedDefaultSettings }; 
     if (typeof window !== "undefined") {
       const storedSettings = localStorage.getItem(SETTINGS_STORAGE_KEY);
       if (storedSettings) {
         try {
-          const parsedSettings = JSON.parse(storedSettings);
-          // Merge with hardcoded defaults to ensure all fields are present,
-          // but prioritize stored settings. The current hardcodedDefaultSettings state is used here.
-          return { ...hardcodedDefaultSettings, ...parsedSettings };
+          const parsedSettings = JSON.parse(storedSettings) as Partial<AISettings>;
+          if (parsedSettings.apiKey && parsedSettings.apiKey.trim() !== "") {
+            effectiveSettings.apiKey = parsedSettings.apiKey;
+          }
+          if (parsedSettings.model) {
+            effectiveSettings.model = parsedSettings.model;
+          }
+          if (parsedSettings.provider) {
+            effectiveSettings.provider = parsedSettings.provider;
+          }
         } catch (e) {
-          console.error("Failed to parse settings from localStorage, using defaults.", e);
-          return hardcodedDefaultSettings; // Use the current state of hardcodedDefaultSettings
+          console.error("Failed to parse settings from localStorage, using hardcoded defaults.", e);
         }
       }
     }
-    return hardcodedDefaultSettings; // Use the current state of hardcodedDefaultSettings
+    // Ensure the hardcoded key is used if the effective one is still empty or different from the latest hardcoded default
+    if (!effectiveSettings.apiKey || effectiveSettings.apiKey.trim() === "" || effectiveSettings.apiKey !== hardcodedDefaultSettings.apiKey) {
+        effectiveSettings.apiKey = hardcodedDefaultSettings.apiKey;
+    }
+    if (!effectiveSettings.model || effectiveSettings.model !== hardcodedDefaultSettings.model) {
+        effectiveSettings.model = hardcodedDefaultSettings.model;
+    }
+     if (!effectiveSettings.provider || effectiveSettings.provider !== hardcodedDefaultSettings.provider) {
+        effectiveSettings.provider = hardcodedDefaultSettings.provider;
+    }
+    return effectiveSettings;
   });
   
-  const [isUpdateFromBroadcast, setIsUpdateFromBroadcast] = useState(false);
-
-
   const getDefaultWelcomeMessage = useCallback((): Message[] => [{
     id: `ai-welcome-${Date.now()}`,
     text: "Welcome to CyberChat AI! I was created by Shan, a 19-year-old tech enthusiast from Malaysia. My purpose is to assist you in the digital realm. How can I help you today? 🤖✨",
@@ -122,6 +138,46 @@ export function useChatController() {
     }
   }, [messages]);
 
+   // Effect to initialize settings from hardcoded defaults and then local storage
+  useEffect(() => {
+    let effectiveSettings = { ...hardcodedDefaultSettings };
+    if (typeof window !== "undefined") {
+        const storedSettings = localStorage.getItem(SETTINGS_STORAGE_KEY);
+        if (storedSettings) {
+            try {
+                const parsedSettings = JSON.parse(storedSettings) as Partial<AISettings>;
+                // Merge stored settings over hardcoded, but ensure critical fields like apiKey are from hardcoded if not valid in stored
+                effectiveSettings.apiKey = (parsedSettings.apiKey && parsedSettings.apiKey.trim() !== "") ? parsedSettings.apiKey : hardcodedDefaultSettings.apiKey;
+                effectiveSettings.model = parsedSettings.model || hardcodedDefaultSettings.model;
+                effectiveSettings.provider = parsedSettings.provider || hardcodedDefaultSettings.provider;
+
+                 // Crucially, if creator isn't logged in, force API key to hardcoded default
+                if (!isCreatorLoggedIn) {
+                    effectiveSettings.apiKey = hardcodedDefaultSettings.apiKey;
+                    effectiveSettings.model = hardcodedDefaultSettings.model;
+                    effectiveSettings.provider = hardcodedDefaultSettings.provider;
+                }
+
+
+            } catch (e) {
+                console.error("Failed to parse settings from localStorage, using hardcoded defaults.", e);
+                 // If parsing fails, ensure defaults, especially if not creator
+                if (!isCreatorLoggedIn) {
+                    effectiveSettings = { ...hardcodedDefaultSettings };
+                }
+            }
+        } else {
+             // No stored settings, use hardcoded, especially if not creator
+            if (!isCreatorLoggedIn) {
+                effectiveSettings = { ...hardcodedDefaultSettings };
+            }
+        }
+        setSettings(effectiveSettings);
+    }
+  }, [hardcodedDefaultSettings, isCreatorLoggedIn]); // Rerun if hardcoded defaults change or login status changes
+
+
+  // Broadcast channel for settings updates
   useEffect(() => {
     if (typeof window === "undefined" || !window.BroadcastChannel) {
       return;
@@ -131,12 +187,17 @@ export function useChatController() {
       if (event.data && event.data.type === 'SETTINGS_UPDATE') {
         const newSettingsFromBroadcast = event.data.payload as AISettings;
         if (JSON.stringify(newSettingsFromBroadcast) !== JSON.stringify(settings)) {
-          console.log('Received settings update from broadcast channel:', newSettingsFromBroadcast);
-          setIsUpdateFromBroadcast(true); 
-          setSettings(newSettingsFromBroadcast);
-          // Update hardcodedDefaultSettings state as well if the broadcasted settings are considered the new "default"
-          // This ensures that if a creator updates settings, it becomes the new base for all users.
-          setHardcodedDefaultSettings(newSettingsFromBroadcast); 
+          setIsUpdateFromBroadcast(true);
+          // Non-creators receive updates, creators' local changes are authoritative for broadcasting
+          if (!isCreatorLoggedIn) {
+            setSettings(newSettingsFromBroadcast);
+            // Also update hardcodedDefaultSettings for non-creators to reflect the new "global" default
+            setHardcodedDefaultSettings(newSettingsFromBroadcast);
+          } else {
+            // If creator, this means another creator tab updated settings.
+            // We should still update the local state to reflect this, but not re-broadcast.
+            setSettings(newSettingsFromBroadcast);
+          }
         }
       }
     };
@@ -145,22 +206,32 @@ export function useChatController() {
       channel.removeEventListener('message', handleMessage);
       channel.close();
     };
-  }, [settings]); 
+  }, [settings, isCreatorLoggedIn]); // isCreatorLoggedIn ensures correct behavior for who updates/receives
 
+
+  // Save settings to localStorage and broadcast if creator
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-      if (!isUpdateFromBroadcast && isCreatorLoggedIn && window.BroadcastChannel) {
-        const channel = new BroadcastChannel(SETTINGS_BROADCAST_CHANNEL_NAME);
-        console.log('Creator broadcasting local settings update:', settings);
-        channel.postMessage({ type: 'SETTINGS_UPDATE', payload: settings });
-        channel.close(); 
+      // Only allow creators to persist their settings to localStorage.
+      // Non-creators will use the hardcoded defaults or what's broadcasted.
+      if (isCreatorLoggedIn) {
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+        if (!isUpdateFromBroadcast && window.BroadcastChannel) { // Avoid re-broadcasting if update came from channel
+            const channel = new BroadcastChannel(SETTINGS_BROADCAST_CHANNEL_NAME);
+            channel.postMessage({ type: 'SETTINGS_UPDATE', payload: settings });
+            channel.close();
+        }
+      } else {
+        // For non-creators, we don't save their settings to local storage.
+        // They always start with hardcoded/broadcasted settings.
+        // We could clear local storage here to ensure no stale creator settings are picked up if they log out.
+        // localStorage.removeItem(SETTINGS_STORAGE_KEY);
       }
       if (isUpdateFromBroadcast) {
         setIsUpdateFromBroadcast(false);
       }
     }
-  }, [settings, isUpdateFromBroadcast, isCreatorLoggedIn]);
+  }, [settings, isCreatorLoggedIn, isUpdateFromBroadcast]);
 
 
   const addMessage = useCallback((text: string, sender: MessageSender, type?: Message['type'], fileName?: string, filePreviewUri?: string, fileDataUri?: string) => {
@@ -215,20 +286,19 @@ export function useChatController() {
 
     addMessage(userMessageText, "user", file ? "file_upload_request" : "text", file?.name, file?.type.startsWith("image/") ? file.dataUri : undefined, file?.dataUri);
     
-    const creatorSecretCode = "shanherecool";
-    if (text.trim().toLowerCase() === creatorSecretCode.toLowerCase() && isCreatorLoggedIn) {
-      setIsCreatorModeActive(true);
-      addMessage("Welcome, Creator! Unrestricted mode activated. Your commands are my priority. 👑", "ai");
-      toast({ title: "Creator Mode Active", description: "Unrestricted access granted." });
-      setIsLoading(false); 
-      setCurrentAIMessageId(null); 
-      return; 
-    } else if (text.trim().toLowerCase().includes(creatorSecretCode.toLowerCase()) && !isCreatorLoggedIn) {
-      addMessage("Warning: Attempt to use a restricted command detected. This action has been logged. Please use the application as intended.", "ai", "error");
-      toast({ title: "Access Denied", description: "Restricted command usage detected.", variant: "destructive" });
-      setIsLoading(false);
-      setCurrentAIMessageId(null);
-      return;
+    const creatorSecretCode = "shanherecool"; // Case-insensitive comparison below
+    if (text.trim().toLowerCase() === creatorSecretCode.toLowerCase()) {
+        if (isCreatorLoggedIn) {
+            setIsCreatorModeActive(true);
+            addMessage("Welcome, Creator! Unrestricted mode activated. Your commands are my priority. 👑", "ai");
+            toast({ title: "Creator Mode Active", description: "Unrestricted access granted." });
+        } else {
+            addMessage("Alert: You've attempted to use a restricted command. This action requires creator privileges and has been logged.", "ai", "error");
+            toast({ title: "Access Denied", description: "Restricted command. Creator login required.", variant: "destructive" });
+        }
+        setIsLoading(false);
+        setCurrentAIMessageId(null);
+        return;
     }
 
 
@@ -244,10 +314,10 @@ export function useChatController() {
     const currentSettings = settings; 
 
     if (!currentSettings.apiKey || currentSettings.apiKey.trim() === "") {
-      finalAiTextForDisplay = "API key not set. Please configure your OpenRouter API key in the AI Provider Settings (sidebar).";
+      finalAiTextForDisplay = "API key not set. Please configure your OpenRouter API key in the AI Provider Settings (sidebar if logged in as creator) or contact the administrator.";
       finalReasoning = "API key check failed: The API key is missing from the settings. AI communication cannot proceed without a valid API key.";
       messageType = "error";
-      toast({ title: "API Key Missing", description: "Configure your OpenRouter API key in settings.", variant: "destructive" });
+      toast({ title: "API Key Missing", description: "OpenRouter API key is not configured.", variant: "destructive" });
     } else {
       let accumulatedText = "";
       let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -461,7 +531,7 @@ export function useChatController() {
         if (msg.id === aiMessageId) {
           let textToSet = finalAiTextForDisplay;
           if (!textToSet.trim() && messageType !== 'error') {
-            textToSet = "No response generated, or an issue occurred. Please check settings.";
+            textToSet = "No response generated, or an issue occurred. Please check settings or contact administrator if issue persists.";
             if (finalReasoning === "The AI processed the input, considered relevant information from its knowledge base and the conversation history, and generated the most appropriate response according to its programming and the provided context.") {
               finalReasoning = "The AI service did not return a valid response or the response was empty.";
             }
