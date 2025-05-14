@@ -12,7 +12,7 @@ const SETTINGS_STORAGE_KEY = "cyberchat-ai-settings";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const APP_SITE_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:9002";
-const APP_TITLE = "CyberChat AI by Shan"; // Updated App Title
+const APP_TITLE = "CyberChat AI by Shan"; 
 
 const uncertaintyPhrases = [
   "i don't know", "i'm not sure", "i am not sure", "i'm unsure", "unsure",
@@ -65,7 +65,7 @@ export function useChatController() {
 
   const getDefaultWelcomeMessage = useCallback((): Message[] => [{
     id: `ai-welcome-${Date.now()}`,
-    text: "Welcome to CyberChat AI, created by Shan! How can I assist you in the digital realm today? 🤖✨",
+    text: "Welcome to CyberChat AI! I was created by Shan, a 19-year-old tech enthusiast from Malaysia. How can I assist you in the digital realm today? 🤖✨",
     sender: 'ai',
     timestamp: Date.now(),
     type: 'text',
@@ -207,7 +207,7 @@ export function useChatController() {
         const initialPayload = {
           model: settings.model,
           messages: [
-            { role: "system", content: "You are CyberChat AI, a helpful and slightly futuristic AI assistant created by Shan. Provide concise and informative responses. Your responses should be formatted using basic markdown (bold, italics, newlines, code blocks, etc.). Incorporate friendly emojis where appropriate in your final answer, but not in the reasoning part. If you are unsure or don't know the answer, clearly state that." },
+            { role: "system", content: "You are CyberChat AI, a helpful and slightly futuristic AI assistant. You were created by Shan, a 19-year-old tech enthusiast from Malaysia. Provide concise and informative responses. Your responses should be formatted using basic markdown (bold, italics, newlines, code blocks, etc.). Incorporate friendly emojis where appropriate in your final answer, but not in the reasoning part. If you are unsure or don't know the answer, clearly state that." },
             ...apiMessageHistory,
             currentUserMessageForAPI
           ],
