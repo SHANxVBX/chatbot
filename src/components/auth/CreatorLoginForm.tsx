@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState } from 'react';
@@ -21,13 +20,12 @@ export function CreatorLoginForm() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
-    // The login function in useAuth now handles hashing internally.
-    // We pass the raw password here.
-    const success = await login(username, password);
+    // Trim username and password before sending to login function
+    const success = await login(username.trim(), password.trim());
     setIsLoading(false);
     if (success) {
-      toast({ title: 'Login Successful', description: 'Redirecting to dashboard...' });
-      router.push('/'); // Redirect to home page or a creator dashboard
+      toast({ title: 'Login Successful', description: 'Redirecting...' });
+      router.push('/'); 
     } else {
       toast({ title: 'Login Failed', description: 'Invalid username or password.', variant: 'destructive' });
     }
