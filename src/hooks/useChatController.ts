@@ -9,6 +9,11 @@ import { useToast } from "@/hooks/use-toast";
 const CHAT_STORAGE_KEY = "cyberchat-ai-history";
 const SETTINGS_STORAGE_KEY = "cyberchat-ai-settings";
 
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const APP_SITE_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:9002";
+const APP_TITLE = "CyberChat AI";
+
+
 export function useChatController() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentAIMessageId, setCurrentAIMessageId] = useState<string | null>(null);
@@ -26,14 +31,12 @@ export function useChatController() {
     return { apiKey: "", model: "openai/gpt-4o", provider: "OpenRouter" };
   });
 
-  // Load chat history from local storage
   useEffect(() => {
     if (typeof window !== "undefined") {
       const storedMessages = localStorage.getItem(CHAT_STORAGE_KEY);
       if (storedMessages) {
         setMessages(JSON.parse(storedMessages));
       } else {
-         // Add an initial welcome message if history is empty
         setMessages([{
           id: `ai-welcome-${Date.now()}`,
           text: "Welcome to CyberChat AI! How can I assist you in the digital realm today?",
@@ -45,14 +48,12 @@ export function useChatController() {
     }
   }, []);
 
-  // Save chat history to local storage
   useEffect(() => {
     if (typeof window !== "undefined") {
       localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
     }
   }, [messages]);
 
-  // Save settings to local storage
   useEffect(() => {
     if (typeof window !== "undefined") {
       localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
@@ -82,7 +83,8 @@ export function useChatController() {
     setMessages(prev => {
       return prev.map(msg => {
         if (msg.id === id) {
-          const updatedText = msg.text === "Thinking..." || msg.text === "Searching..." ? chunk : msg.text + chunk;
+          const isInitialPlaceholder = msg.text === "Thinking..." || msg.text.startsWith("Processing") || msg.text.startsWith("Searching");
+          const updatedText = isInitialPlaceholder ? chunk : msg.text + chunk;
           return { ...msg, text: updatedText, timestamp: Date.now() };
         }
         return msg;
@@ -94,43 +96,146 @@ export function useChatController() {
   }, []);
 
   const handleSendMessage = async (text: string, file?: { dataUri: string; name: string; type: string }) => {
-    addMessage(text, "user", file ? "file_upload_request" : "text", file?.name, file?.type.startsWith("image/") ? file.dataUri : undefined, file?.dataUri);
+    const userMessageId = addMessage(text, "user", file ? "file_upload_request" : "text", file?.name, file?.type.startsWith("image/") ? file.dataUri : undefined, file?.dataUri);
     setIsLoading(true);
     
     const aiMessageId = addMessage("Thinking...", "ai", "text");
     setCurrentAIMessageId(aiMessageId);
 
+    if (!settings.apiKey) {
+      updateMessage(aiMessageId, "API key not set. Please configure it in the AI Provider Settings in the sidebar.", "error");
+      toast({
+        title: "API Key Missing",
+        description: "Configure your OpenRouter API key in settings.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      setCurrentAIMessageId(null);
+      return;
+    }
+
     try {
-      // This is a placeholder for actual LLM interaction.
-      // For now, we'll just echo or use a predefined response.
-      // In a real scenario, you'd call your chosen LLM API here with `text` and `settings`.
-      // The Genkit flows are for specific tasks (summarize, web search).
-      
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      let aiResponseText = `Cyber-echo: "${text}"`;
-      if (text.toLowerCase().includes("hello") || text.toLowerCase().includes("hi")) {
-        aiResponseText = "Greetings, user. Systems online. How may I assist?";
-      } else if (text.toLowerCase().includes("help")) {
-        aiResponseText = "I can assist with text-based queries, summarize uploaded documents, or perform web searches. Use the sidebar tools or type your request.";
-      } else if (text.toLowerCase().includes("time")) {
-        aiResponseText = `The current cyber-time is: ${new Date().toLocaleTimeString()}.`;
+      const messageHistoryForAPI = messages
+        .filter(msg => {
+          if (msg.sender === 'system') return false;
+          // Exclude AI thinking placeholders more reliably by checking against the current AI message ID if it's a placeholder
+          if (msg.id === aiMessageId && msg.text === "Thinking...") return false; 
+          if (msg.sender === 'ai' && (msg.text.startsWith("Processing document...") || msg.text.startsWith("Searching the web for"))) return false;
+          
+          if (msg.sender === 'user' && (msg.type === 'text' || msg.type === 'file_upload_request')) return true;
+          if (msg.sender === 'ai' && (msg.type === 'text' || msg.type === 'summary' || msg.type === 'search_result' || msg.type === 'error')) return true;
+          return false;
+        })
+        .slice(-10) // Get up to last 10 qualifying messages (user + AI)
+        .map(msg => {
+          const role = msg.sender === 'user' ? 'user' : 'assistant';
+          // Check for image data for user messages
+          if (role === 'user' && msg.fileDataUri && msg.filePreviewUri?.startsWith('data:image')) {
+            return {
+              role: 'user',
+              content: [
+                { type: 'text', text: msg.text },
+                { type: 'image_url', image_url: { url: msg.fileDataUri } },
+              ],
+            };
+          }
+          return { role, content: msg.text };
+        });
+        
+      const payload = {
+        model: settings.model,
+        messages: [
+          { role: "system", content: "You are CyberChat AI, a helpful and slightly futuristic AI assistant. Provide concise and informative responses. Your responses should be formatted using basic markdown (bold, italics, newlines, lists, etc.)." },
+          ...messageHistoryForAPI,
+        ],
+        stream: true,
+      };
+
+      const response = await fetch(OPENROUTER_API_URL, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${settings.apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": APP_SITE_URL,
+          "X-Title": APP_TITLE,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: "Unknown API error" }));
+        const errorMessage = errorData?.error?.message || errorData.detail || `API Error: ${response.status} ${response.statusText}`;
+        throw new Error(errorMessage);
       }
 
-      updateMessage(aiMessageId, aiResponseText);
+      if (!response.body) {
+        throw new Error("Response body is null");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          // Process any remaining buffer content if necessary, though [DONE] should handle it.
+          if (buffer.trim()) {
+             // This case should ideally not happen if stream ends cleanly with [DONE]
+            console.warn("Stream ended with unprocessed buffer:", buffer);
+          }
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() || ""; // Keep incomplete part in buffer
+
+        for (const part of parts) {
+          if (part.startsWith("data: ")) {
+            const jsonData = part.substring(6).trim();
+            if (jsonData === "[DONE]") {
+              streamMessageUpdate(aiMessageId, "", true); // Signal completion
+              reader.releaseLock(); // Release the lock on the reader
+              return; // Exit processing loop
+            }
+            try {
+              const chunkData = JSON.parse(jsonData);
+              if (chunkData.choices && chunkData.choices[0].delta && chunkData.choices[0].delta.content) {
+                const contentChunk = chunkData.choices[0].delta.content;
+                streamMessageUpdate(aiMessageId, contentChunk);
+              } else if (chunkData.choices && chunkData.choices[0].finish_reason) {
+                // Sometimes finish_reason comes in a separate chunk
+                if(chunkData.choices[0].finish_reason === 'stop') {
+                    streamMessageUpdate(aiMessageId, "", true);
+                    reader.releaseLock();
+                    return;
+                }
+              }
+            } catch (e) {
+              console.error("Error parsing stream JSON:", jsonData, e);
+              // Potentially update UI with a stream parsing error
+            }
+          }
+        }
+      }
+      // Fallback to mark as complete if loop finishes without [DONE] explicitly handled (should not happen with proper SSE)
+      streamMessageUpdate(aiMessageId, "", true);
+      reader.releaseLock();
 
     } catch (error) {
-      console.error("Error sending message:", error);
-      updateMessage(aiMessageId, "Error: Could not connect to AI. Check console.", "error");
+      console.error("Error sending message to OpenRouter:", error);
+      const errorMsg = (error as Error).message || "Failed to connect to AI. Check console.";
+      updateMessage(aiMessageId, `Error: ${errorMsg}`, "error");
       toast({
-        title: "AI Connection Error",
-        description: "Failed to get a response from the AI. Please check your settings or network.",
+        title: "AI Communication Error",
+        description: errorMsg,
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
-      setCurrentAIMessageId(null);
+      // currentAIMessageId is cleared by streamMessageUpdate on final chunk or by logic above
     }
   };
 
@@ -164,7 +269,7 @@ export function useChatController() {
   const handleWebSearch = async (query: string) => {
     addMessage(`Searching the web for: "${query}"`, "user", "text");
     setIsSearchingWeb(true);
-    setIsLoading(true); // Generic loading state
+    setIsLoading(true); 
     const aiMessageId = addMessage(`Searching the web for "${query}"...`, "ai", "search_result");
     setCurrentAIMessageId(aiMessageId);
 
