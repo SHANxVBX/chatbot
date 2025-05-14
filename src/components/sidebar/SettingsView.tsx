@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { AISettings } from "@/lib/types";
@@ -93,7 +94,8 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
                 className="glassmorphic-input"
                 readOnly={!isCreatorLoggedIn}
                 disabled={!isCreatorLoggedIn}
-                aria-hidden={!isCreatorLoggedIn} 
+                aria-hidden={!isCreatorLoggedIn}
+                tabIndex={!isCreatorLoggedIn ? -1 : undefined} // Prevent tabbing when blurred
               />
             </div>
           </div>
@@ -122,3 +124,4 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
     </Card>
   );
 }
+
