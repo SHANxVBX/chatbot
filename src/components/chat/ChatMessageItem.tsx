@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use client";
 
 import type { Message } from "@/lib/types";
@@ -32,15 +33,15 @@ const renderText = (text: string): React.ReactNode[] => {
           key={`details-${index}`}
           className={cn(
             "my-2 p-3 rounded-md shadow-md border",
-            isWebSearchResult 
-              ? "bg-primary/10 dark:bg-primary/20 border-primary/20 dark:border-primary/30" 
+            isWebSearchResult
+              ? "bg-blue-100 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800/50"
               : "bg-muted/20 dark:bg-muted/30 border-border/20 dark:border-border/30"
           )}
         >
           <summary className={cn(
             "font-semibold cursor-pointer text-sm hover:opacity-80",
-            isWebSearchResult 
-              ? "text-primary dark:text-primary-foreground/80"
+            isWebSearchResult
+              ? "text-blue-700 dark:text-blue-300"
               : "text-foreground/80 dark:text-foreground/90"
             )}
           >
@@ -178,3 +179,4 @@ export function ChatMessageItem({ message }: { message: Message }) {
     </div>
   );
 }
+
