@@ -4,7 +4,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
-
 interface AuthContextType {
   isCreatorLoggedIn: boolean;
   login: (username_input: string, password_input: string) => Promise<boolean>;
@@ -14,9 +13,24 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const CREATOR_AUTH_KEY = 'creatorLoggedIn';
-// Hardcoded credentials
+// Hardcoded username and HASHED password
 const CREATOR_USERNAME = "pannikutty";
-const CREATOR_PASSWORD = "Hxp652728";
+// SHA-256 hash of "Hxp652728"
+const HASHED_CREATOR_PASSWORD = "2d8f68c30e08f12b048a43e5658d8e8b1098f3688e576f2e0a5b7774819a5a07";
+
+// Helper function to hash a string using SHA-256
+async function sha256(str: string): Promise<string> {
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
+    const buffer = new TextEncoder().encode(str);
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex;
+  }
+  // Fallback for environments where crypto.subtle is not available (should not happen in modern browsers)
+  console.warn('Web Crypto API not available for password hashing. Login may not be secure.');
+  return str; // Insecure fallback, but login will likely fail if hashes don't match.
+}
 
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -33,7 +47,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = useCallback(async (username_input: string, password_input: string): Promise<boolean> => {
-    if (username_input === CREATOR_USERNAME && password_input === CREATOR_PASSWORD) {
+    const hashed_password_input = await sha256(password_input);
+    if (username_input === CREATOR_USERNAME && hashed_password_input === HASHED_CREATOR_PASSWORD) {
       if (typeof window !== 'undefined') {
         localStorage.setItem(CREATOR_AUTH_KEY, 'true');
       }
@@ -53,7 +68,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const authProviderValue: AuthContextType = { isCreatorLoggedIn, login, logout };
 
-  // Use AuthContext.Provider directly
   return (
     <AuthContext.Provider value={authProviderValue}>
       {children}

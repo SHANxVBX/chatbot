@@ -21,6 +21,8 @@ export function CreatorLoginForm() {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
+    // The login function in useAuth now handles hashing internally.
+    // We pass the raw password here.
     const success = await login(username, password);
     setIsLoading(false);
     if (success) {
