@@ -10,7 +10,7 @@ const CHAT_STORAGE_KEY = "cyberchat-ai-history";
 const SETTINGS_STORAGE_KEY = "cyberchat-ai-settings";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const APP_SITE_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:9002";
+const APP_SITE_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:9002"; // Default for server-side if needed
 const APP_TITLE = "CyberChat AI";
 
 
@@ -35,21 +35,34 @@ export function useChatController() {
     if (typeof window !== "undefined") {
       const storedMessages = localStorage.getItem(CHAT_STORAGE_KEY);
       if (storedMessages) {
-        setMessages(JSON.parse(storedMessages));
+        try {
+          const parsedMessages = JSON.parse(storedMessages);
+          if (Array.isArray(parsedMessages)) {
+            setMessages(parsedMessages);
+          } else {
+            setMessages(getDefaultWelcomeMessage());
+          }
+        } catch (e) {
+          console.error("Failed to parse messages from localStorage", e);
+          setMessages(getDefaultWelcomeMessage());
+        }
       } else {
-        setMessages([{
-          id: `ai-welcome-${Date.now()}`,
-          text: "Welcome to CyberChat AI! How can I assist you in the digital realm today?",
-          sender: 'ai',
-          timestamp: Date.now(),
-          type: 'text',
-        }]);
+        setMessages(getDefaultWelcomeMessage());
       }
     }
   }, []);
 
+  const getDefaultWelcomeMessage = (): Message[] => [{
+    id: `ai-welcome-${Date.now()}`,
+    text: "Welcome to CyberChat AI! How can I assist you in the digital realm today?",
+    sender: 'ai',
+    timestamp: Date.now(),
+    type: 'text',
+  }];
+
+
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && messages.length > 0) { // Avoid saving empty initial array before hydration
       localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
     }
   }, [messages]);
@@ -96,14 +109,14 @@ export function useChatController() {
   }, []);
 
   const handleSendMessage = async (text: string, file?: { dataUri: string; name: string; type: string }) => {
-    const userMessageId = addMessage(text, "user", file ? "file_upload_request" : "text", file?.name, file?.type.startsWith("image/") ? file.dataUri : undefined, file?.dataUri);
+    addMessage(text, "user", file ? "file_upload_request" : "text", file?.name, file?.type.startsWith("image/") ? file.dataUri : undefined, file?.dataUri);
     setIsLoading(true);
     
     const aiMessageId = addMessage("Thinking...", "ai", "text");
     setCurrentAIMessageId(aiMessageId);
 
-    if (!settings.apiKey) {
-      updateMessage(aiMessageId, "API key not set. Please configure it in the AI Provider Settings in the sidebar.", "error");
+    if (!settings.apiKey || settings.apiKey.trim() === "") {
+      updateMessage(aiMessageId, "API key not set. Please configure your OpenRouter API key in the AI Provider Settings (sidebar).", "error");
       toast({
         title: "API Key Missing",
         description: "Configure your OpenRouter API key in settings.",
@@ -114,27 +127,28 @@ export function useChatController() {
       return;
     }
 
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+
     try {
       const messageHistoryForAPI = messages
         .filter(msg => {
           if (msg.sender === 'system') return false;
-          // Exclude AI thinking placeholders more reliably by checking against the current AI message ID if it's a placeholder
-          if (msg.id === aiMessageId && msg.text === "Thinking...") return false; 
-          if (msg.sender === 'ai' && (msg.text.startsWith("Processing document...") || msg.text.startsWith("Searching the web for"))) return false;
+          // Exclude AI thinking/processing placeholders associated with the current response being generated
+          if (msg.id === aiMessageId && (msg.text === "Thinking..." || msg.text.startsWith("Processing") || msg.text.startsWith("Searching"))) return false;
           
+          // Include relevant user messages and AI responses (text, summary, search_result, error for context)
           if (msg.sender === 'user' && (msg.type === 'text' || msg.type === 'file_upload_request')) return true;
           if (msg.sender === 'ai' && (msg.type === 'text' || msg.type === 'summary' || msg.type === 'search_result' || msg.type === 'error')) return true;
           return false;
         })
-        .slice(-10) // Get up to last 10 qualifying messages (user + AI)
+        .slice(-12) // Use a slightly larger history, e.g., 12 items (6 pairs)
         .map(msg => {
           const role = msg.sender === 'user' ? 'user' : 'assistant';
-          // Check for image data for user messages
           if (role === 'user' && msg.fileDataUri && msg.filePreviewUri?.startsWith('data:image')) {
             return {
               role: 'user',
               content: [
-                { type: 'text', text: msg.text },
+                { type: 'text', text: msg.text || "Image attached" }, // Ensure text is not empty
                 { type: 'image_url', image_url: { url: msg.fileDataUri } },
               ],
             };
@@ -163,16 +177,16 @@ export function useChatController() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: "Unknown API error" }));
-        const errorMessage = errorData?.error?.message || errorData.detail || `API Error: ${response.status} ${response.statusText}`;
+        const errorData = await response.json().catch(() => ({ error: { message: "Unknown API error occurred." }}));
+        const errorMessage = errorData?.error?.message || `API Error: ${response.status} ${response.statusText}`;
         throw new Error(errorMessage);
       }
 
       if (!response.body) {
-        throw new Error("Response body is null");
+        throw new Error("Response body is null. Cannot process stream.");
       }
 
-      const reader = response.body.getReader();
+      reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
 
@@ -180,12 +194,12 @@ export function useChatController() {
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
-          // Process any remaining buffer content if necessary, though [DONE] should handle it.
           if (buffer.trim()) {
-             // This case should ideally not happen if stream ends cleanly with [DONE]
             console.warn("Stream ended with unprocessed buffer:", buffer);
+            // Potentially process final part of buffer if needed, though rare for SSE
           }
-          break;
+          streamMessageUpdate(aiMessageId, "", true); // Signal completion
+          break; // Exit while loop
         }
 
         buffer += decoder.decode(value, { stream: true });
@@ -197,8 +211,11 @@ export function useChatController() {
             const jsonData = part.substring(6).trim();
             if (jsonData === "[DONE]") {
               streamMessageUpdate(aiMessageId, "", true); // Signal completion
-              reader.releaseLock(); // Release the lock on the reader
-              return; // Exit processing loop
+              if (reader) await reader.cancel(); // Cancel reader instead of just releasing lock
+              reader = null;
+              setIsLoading(false); // Set explicitly on clean exit
+              setCurrentAIMessageId(null); // Set explicitly on clean exit
+              return; // Exit handleSendMessage
             }
             try {
               const chunkData = JSON.parse(jsonData);
@@ -206,27 +223,29 @@ export function useChatController() {
                 const contentChunk = chunkData.choices[0].delta.content;
                 streamMessageUpdate(aiMessageId, contentChunk);
               } else if (chunkData.choices && chunkData.choices[0].finish_reason) {
-                // Sometimes finish_reason comes in a separate chunk
                 if(chunkData.choices[0].finish_reason === 'stop') {
                     streamMessageUpdate(aiMessageId, "", true);
-                    reader.releaseLock();
-                    return;
+                    if (reader) await reader.cancel();
+                    reader = null;
+                    setIsLoading(false); // Set explicitly on clean exit
+                    setCurrentAIMessageId(null); // Set explicitly on clean exit
+                    return; // Exit handleSendMessage
                 }
               }
             } catch (e) {
               console.error("Error parsing stream JSON:", jsonData, e);
-              // Potentially update UI with a stream parsing error
+              // This error is critical for stream processing. Re-throw to be caught by outer try-catch.
+              throw new Error(`Stream parsing error: ${(e as Error).message}. Data: ${jsonData}`);
             }
           }
         }
       }
-      // Fallback to mark as complete if loop finishes without [DONE] explicitly handled (should not happen with proper SSE)
+      // If loop finished due to `done` without an explicit [DONE] or 'stop' signal from above returns
       streamMessageUpdate(aiMessageId, "", true);
-      reader.releaseLock();
 
     } catch (error) {
-      console.error("Error sending message to OpenRouter:", error);
-      const errorMsg = (error as Error).message || "Failed to connect to AI. Check console.";
+      console.error("Error in handleSendMessage:", error);
+      const errorMsg = (error as Error).message || "Failed to connect to AI or process its response. Check console.";
       updateMessage(aiMessageId, `Error: ${errorMsg}`, "error");
       toast({
         title: "AI Communication Error",
@@ -234,15 +253,22 @@ export function useChatController() {
         variant: "destructive",
       });
     } finally {
+      if (reader) {
+        try {
+          await reader.cancel(); // Ensure reader is cancelled if loop exited unexpectedly
+        } catch (e) {
+          console.error("Error cancelling reader:", e);
+        }
+      }
       setIsLoading(false);
-      // currentAIMessageId is cleared by streamMessageUpdate on final chunk or by logic above
+      setCurrentAIMessageId(null); // Ensure this is always reset if not already
     }
   };
 
   const handleFileUpload = async (fileDataUri: string, fileName: string, fileType: string) => {
-    addMessage(`Attempting to summarize ${fileName}...`, "system", "text");
+    addMessage(`Processing ${fileName} for summarization...`, "system", "text");
     setIsLoading(true);
-    const aiMessageId = addMessage("Processing document...", "ai", "summary");
+    const aiMessageId = addMessage(`Processing document "${fileName}"...`, "ai", "summary");
     setCurrentAIMessageId(aiMessageId);
 
     try {
@@ -254,7 +280,7 @@ export function useChatController() {
       });
     } catch (error) {
       console.error("Error summarizing file:", error);
-      updateMessage(aiMessageId, `Error summarizing ${fileName}. The AI core might be offline or the file format is not supported by the current model.`, "error");
+      updateMessage(aiMessageId, `Error summarizing ${fileName}: ${(error as Error).message || 'Unknown error'}. The AI core might be offline or the file format is not supported.`, "error");
       toast({
         title: "Summarization Failed",
         description: (error as Error).message || "Could not summarize the file.",
@@ -267,8 +293,8 @@ export function useChatController() {
   };
 
   const handleWebSearch = async (query: string) => {
-    addMessage(`Searching the web for: "${query}"`, "user", "text");
-    setIsSearchingWeb(true);
+    addMessage(`Initiating web search for: "${query}"`, "user", "text");
+    setIsSearchingWeb(true); // Specific loading state for search
     setIsLoading(true); 
     const aiMessageId = addMessage(`Searching the web for "${query}"...`, "ai", "search_result");
     setCurrentAIMessageId(aiMessageId);
@@ -282,7 +308,7 @@ export function useChatController() {
       });
     } catch (error) {
       console.error("Error performing web search:", error);
-      updateMessage(aiMessageId, `Error searching web for "${query}". The data streams might be corrupted or the search module is offline.`, "error");
+      updateMessage(aiMessageId, `Error searching web for "${query}": ${(error as Error).message || 'Unknown error'}. Data streams might be corrupted or the search module is offline.`, "error");
       toast({
         title: "Web Search Failed",
         description: (error as Error).message || "Could not perform web search.",
@@ -314,9 +340,9 @@ export function useChatController() {
     isSearchingWeb,
     currentAIMessageId,
     setSettings,
-    addMessage,
-    updateMessage,
-    streamMessageUpdate,
+    // addMessage, // Not typically exposed directly if all additions go through handlers
+    // updateMessage, // Same as addMessage
+    // streamMessageUpdate, // Internal helper
     handleSendMessage,
     handleFileUpload,
     handleWebSearch,
