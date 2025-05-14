@@ -56,8 +56,7 @@ export function useChatController() {
   const { toast } = useToast();
   const { isCreatorLoggedIn } = useAuth(); 
 
-  // Initial hardcoded default settings. These should represent the application's baseline.
-  const [hardcodedDefaultSettings] = useState<AISettings>({
+  const [hardcodedDefaultSettings, setHardcodedDefaultSettings] = useState<AISettings>({
     apiKey: "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", 
     model: "qwen/qwen3-235b-a22b:free",
     provider: "OpenRouter"
@@ -70,8 +69,6 @@ export function useChatController() {
       if (storedSettings) {
         try {
           const parsedSettings = JSON.parse(storedSettings);
-          // Merge stored settings with hardcoded ones, ensuring all fields are present.
-          // Stored settings take precedence if they exist.
           return { ...hardcodedDefaultSettings, ...parsedSettings };
         } catch (e) {
           console.error("Failed to parse settings from localStorage, using defaults.", e);
@@ -122,49 +119,40 @@ export function useChatController() {
     }
   }, [messages]);
 
-  // Effect for handling settings updates from BroadcastChannel
   useEffect(() => {
     if (typeof window === "undefined" || !window.BroadcastChannel) {
       return;
     }
-
     const channel = new BroadcastChannel(SETTINGS_BROADCAST_CHANNEL_NAME);
-
     const handleMessage = (event: MessageEvent) => {
       if (event.data && event.data.type === 'SETTINGS_UPDATE') {
         const newSettingsFromBroadcast = event.data.payload as AISettings;
-        // Only update if the received settings are actually different
         if (JSON.stringify(newSettingsFromBroadcast) !== JSON.stringify(settings)) {
           console.log('Received settings update from broadcast channel:', newSettingsFromBroadcast);
           setIsUpdateFromBroadcast(true); 
-          setSettings(newSettingsFromBroadcast); // Update the current operational settings
-          // DO NOT update hardcodedDefaultSettings here.
+          setSettings(newSettingsFromBroadcast);
+          // Update hardcodedDefaultSettings as well if the broadcasted settings are considered the new "default"
+          // This ensures that if a creator updates settings, it becomes the new base for all users.
+          setHardcodedDefaultSettings(newSettingsFromBroadcast); 
         }
       }
     };
-
     channel.addEventListener('message', handleMessage);
-
     return () => {
       channel.removeEventListener('message', handleMessage);
       channel.close();
     };
-  }, [settings]); // Depend on current `settings` to compare with broadcasted ones
+  }, [settings]); // Removed hardcodedDefaultSettings dependency here as it is now updated inside
 
-  // Effect for persisting settings to localStorage and broadcasting changes (if made by creator)
   useEffect(() => {
     if (typeof window !== "undefined") {
       localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-
-      // If the change was not from a broadcast AND the creator is logged in, broadcast this tab's settings.
       if (!isUpdateFromBroadcast && isCreatorLoggedIn && window.BroadcastChannel) {
         const channel = new BroadcastChannel(SETTINGS_BROADCAST_CHANNEL_NAME);
         console.log('Creator broadcasting local settings update:', settings);
         channel.postMessage({ type: 'SETTINGS_UPDATE', payload: settings });
         channel.close(); 
       }
-      
-      // Reset the flag after processing
       if (isUpdateFromBroadcast) {
         setIsUpdateFromBroadcast(false);
       }
@@ -250,7 +238,7 @@ export function useChatController() {
     let finalReasoning = "The AI processed the input, considered relevant information from its knowledge base and the conversation history, and generated the most appropriate response according to its programming and the provided context.";
     let messageType: Message['type'] = 'text';
     
-    const currentSettings = settings; // Use the current state of settings
+    const currentSettings = settings; 
 
     if (!currentSettings.apiKey || currentSettings.apiKey.trim() === "") {
       finalAiTextForDisplay = "API key not set. Please configure your OpenRouter API key in the AI Provider Settings (sidebar).";
@@ -273,7 +261,6 @@ export function useChatController() {
               content = [{ type: 'text', text: msg.text || "Image attached" }];
               content.push({ type: 'image_url', image_url: { url: msg.fileDataUri } });
             } else if (msg.sender === 'user' && msg.fileDataUri) {
-              // For non-image files, provide context about the file and the user's message.
               content = `User uploaded a file named "${msg.fileName}". User's textual message regarding this file (if any): "${msg.text || '[No additional text provided with file]'}"`;
             }
             return { role, content };
@@ -589,7 +576,7 @@ export function useChatController() {
   
   const clearChat = () => {
     setMessages(getDefaultWelcomeMessage()); 
-    setIsCreatorModeActive(false); // Also reset creator mode on chat clear
+    setIsCreatorModeActive(false); 
     if (typeof window !== "undefined") {
         localStorage.removeItem(CHAT_STORAGE_KEY);
     }
