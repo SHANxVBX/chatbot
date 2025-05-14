@@ -1,5 +1,5 @@
 
-"use client"; // Make this a client component to manage state via useChatController
+"use client"; 
 
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppHeader } from "./AppHeader";
@@ -7,7 +7,6 @@ import { AppSidebar } from "./AppSidebar";
 import { ChatMessageList } from "@/components/chat/ChatMessageList";
 import { ChatInputBar } from "@/components/chat/ChatInputBar";
 import { useChatController } from "@/hooks/useChatController";
-import { Card } from "@/components/ui/card";
 
 export function AppLayout() {
   const {
@@ -16,12 +15,14 @@ export function AppLayout() {
     isLoading,
     isSearchingWeb,
     currentAIMessageId,
-    isCreatorModeActive,
+    // isCreatorModeActive, // This state is managed internally by useChatController
+    isCheckingApiKey,
     setSettings,
     handleSendMessage,
     handleFileUpload,
     handleWebSearch,
     clearChat,
+    checkApiKeyStatus,
   } = useChatController();
 
   // Placeholder chat history and selection logic
@@ -47,6 +48,8 @@ export function AppLayout() {
             isSearchingWeb={isSearchingWeb}
             chatHistory={chatHistory}
             onSelectChat={handleSelectChat}
+            onCheckApiKeyStatus={checkApiKeyStatus}
+            isCheckingApiKey={isCheckingApiKey}
           />
           <main className="flex flex-1 flex-col overflow-hidden bg-background/50 md:m-2 md:rounded-xl md:shadow-2xl md:border md:border-border/20 glassmorphic">
             <ChatMessageList messages={messages} isLoading={isLoading} currentAIMessageId={currentAIMessageId} />

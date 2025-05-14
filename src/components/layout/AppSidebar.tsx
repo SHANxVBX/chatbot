@@ -10,7 +10,7 @@ import { WebSearchView } from "@/components/sidebar/WebSearchView";
 import { CyberLogoIcon } from "@/components/icons/CyberLogoIcon";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Cog, UploadCloud, Globe, History, ChevronRight } from 'lucide-react';
-import { useAuth } from "@/hooks/useAuth"; // Added import
+import { useAuth } from "@/hooks/useAuth";
 
 interface AppSidebarProps {
   settings: AISettings;
@@ -19,7 +19,9 @@ interface AppSidebarProps {
   onWebSearch: (query: string) => void;
   isSearchingWeb: boolean;
   chatHistory: { id: string, name: string }[]; 
-  onSelectChat: (id: string) => void; 
+  onSelectChat: (id: string) => void;
+  onCheckApiKeyStatus: () => void;
+  isCheckingApiKey: boolean;
 }
 
 export function AppSidebar({
@@ -30,8 +32,10 @@ export function AppSidebar({
   isSearchingWeb,
   chatHistory = [],
   onSelectChat,
+  onCheckApiKeyStatus,
+  isCheckingApiKey,
 }: AppSidebarProps) {
-  const { isCreatorLoggedIn } = useAuth(); // Get creator login status
+  const { isCreatorLoggedIn } = useAuth(); 
 
   return (
     <Sidebar side="left" variant="sidebar" collapsible="icon" className="glassmorphic-sidebar border-r-0 md:border-r">
@@ -57,7 +61,7 @@ export function AppSidebar({
               <AccordionContent className="pt-0 pb-2 group-data-[collapsible=icon]:hidden">
                 <div className="space-y-2 px-2">
                   <FileUploadView onFileUpload={onFileUpload} />
-                  {isCreatorLoggedIn && ( // Conditionally render WebSearchView
+                  {isCreatorLoggedIn && ( 
                     <WebSearchView onWebSearch={onWebSearch} isSearching={isSearchingWeb} />
                   )}
                 </div>
@@ -73,7 +77,12 @@ export function AppSidebar({
                </AccordionTrigger>
               <AccordionContent className="pt-0 pb-2 group-data-[collapsible=icon]:hidden">
                 <div className="px-2">
-                  <SettingsView settings={settings} onSettingsChange={onSettingsChange} />
+                  <SettingsView
+                    settings={settings}
+                    onSettingsChange={onSettingsChange}
+                    onCheckApiKeyStatus={onCheckApiKeyStatus}
+                    isCheckingApiKey={isCheckingApiKey}
+                  />
                 </div>
               </AccordionContent>
             </AccordionItem>
@@ -117,3 +126,4 @@ export function AppSidebar({
     </Sidebar>
   );
 }
+

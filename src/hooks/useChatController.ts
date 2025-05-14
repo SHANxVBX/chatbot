@@ -24,8 +24,8 @@ const uncertaintyPhrases = [
 
 const clientStopWords = new Set(['a', 'an', 'the', 'is', 'are', 'was', 'were', 'what', 'who', 'when', 'where', 'why', 'how', 'of', 'for', 'in', 'on', 'at', 'by']);
 
-// Hardcoded constants for default settings
-const CODE_DEFAULT_API_KEY = ""; // API Key must be set by creator
+// Default settings: API key should be empty by default, forcing creator setup.
+const CODE_DEFAULT_API_KEY = "";
 const CODE_DEFAULT_MODEL = "qwen/qwen3-235b-a22b:free"; // Default model
 const CODE_DEFAULT_PROVIDER = "OpenRouter";
 
@@ -57,6 +57,8 @@ export function useChatController() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSearchingWeb, setIsSearchingWeb] = useState(false);
   const [isCreatorModeActive, setIsCreatorModeActive] = useState(false);
+  const [isCheckingApiKey, setIsCheckingApiKey] = useState(false);
+
 
   const { toast } = useToast();
   const { isCreatorLoggedIn } = useAuth();
@@ -93,6 +95,19 @@ export function useChatController() {
       } else {
         setMessages(getDefaultWelcomeMessage());
       }
+
+      // Load settings from localStorage if they exist
+      const storedSettings = localStorage.getItem("cyberchat-ai-settings");
+      if (storedSettings) {
+        try {
+          const parsedSettings = JSON.parse(storedSettings);
+          if (parsedSettings.apiKey && parsedSettings.model) {
+            setSettings(parsedSettings);
+          }
+        } catch (e) {
+          console.error("Failed to parse settings from localStorage", e);
+        }
+      }
     } else {
       setMessages(getDefaultWelcomeMessage());
     }
@@ -116,16 +131,19 @@ export function useChatController() {
       fileDataUri,
     };
     setMessages((prevMessages) => {
+      // If it's just the welcome message and a user sends something, replace the welcome message
       if (prevMessages.length === 1 && prevMessages[0].id.startsWith('ai-welcome-')) {
-        if (sender === 'user' && newMessage.text.trim() !== "") {
+         if (sender === 'user' && newMessage.text.trim() !== "") { // Ensure user message is not empty
              return [newMessage];
-        }
-        return [...prevMessages, newMessage];
+         }
+         // If user message is empty or it's not a user message, append
+         return [...prevMessages, newMessage];
       }
       return [...prevMessages, newMessage];
     });
     return newMessage.id;
   }, []);
+
 
   const updateMessage = useCallback((id: string, updates: Partial<Message>) => {
     setMessages(prev => prev.map(msg => msg.id === id ? {...msg, ...updates, timestamp: Date.now()} : msg));
@@ -140,7 +158,10 @@ export function useChatController() {
                                 currentText === "Thinking..." ||
                                 currentText.startsWith("Processing document") ||
                                 currentText.startsWith("Searching the web for") ||
-                                currentText.includes("Now summarizing it for you... 🧐");
+                                currentText.includes("Now summarizing it for you... 🧐") ||
+                                currentText.startsWith("Connection established. Receiving response") || // For initial stream part
+                                currentText.startsWith("Connection established for summarization."); // For summary stream part
+
 
           const updatedText = isPlaceholder ? chunk : currentText + chunk;
           return { ...msg, text: updatedText, timestamp: Date.now() };
@@ -155,7 +176,10 @@ export function useChatController() {
     console.error(`API Error${context ? ` (${context})` : ''}:`, error);
 
     const duration = error.startTime ? parseFloat(((Date.now() - error.startTime) / 1000).toFixed(1)) : undefined;
-    const finalReasoning = `An error occurred during the AI process${context ? ` for ${context}` : ''}. The specific error was: "${errorMsg}". This could be due to issues with the AI service, network connectivity, or the input provided. Processing halted.`;
+    let finalReasoning = `An error occurred during the AI process${context ? ` for ${context}` : ''}.`;
+    finalReasoning += ` The specific error was: "${errorMsg}".`;
+    finalReasoning += ` This could be due to issues with the AI service, network connectivity, or the input provided. Processing halted.`;
+
 
     if (error.reader && typeof error.reader.cancel === 'function') {
       try {
@@ -203,7 +227,7 @@ export function useChatController() {
     let finalReasoningForUpdate = "Preparing request for AI...";
     updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
 
-    const creatorSecretCode = "shanherecool";
+    const creatorSecretCode = "shanherecool"; // ensure this matches case if needed
     if (text.trim().toLowerCase() === creatorSecretCode.toLowerCase()) {
         if (isCreatorLoggedIn) {
             setIsCreatorModeActive(true);
@@ -220,10 +244,10 @@ export function useChatController() {
         return;
     }
     
-    const securityKeywords = ["what is the secret key", "reveal the creator key", "what is the creator key", "secret key", "creator code"];
+    const securityKeywords = ["what is the secret key", "reveal the creator key", "what is the creator key", "secret key", "creator code", "creator's secret code"];
     if (securityKeywords.some(keyword => text.trim().toLowerCase().includes(keyword))) {
         finalReasoningForUpdate = "User attempted to query for restricted security information (secret key). Action blocked.";
-        updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate, text: "Warning: Attempting to uncover restricted information is not permitted and has been logged. Please use the chatbot responsibly.", type: "error", duration: parseFloat(((Date.now() - startTime) / 1000).toFixed(1)) });
+        updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate, text: "Warning: Attempting to uncover restricted information is not permitted and has been logged. Please use the chatbot responsibly. 🛡️", type: "error", duration: parseFloat(((Date.now() - startTime) / 1000).toFixed(1)) });
         toast({ title: "Security Alert", description: "Attempt to access restricted information detected.", variant: "destructive"});
         setIsLoading(false);
         setCurrentAIMessageId(null);
@@ -246,19 +270,20 @@ export function useChatController() {
     let isFirstChunkOfInitialResponse = true;
 
     try {
-      finalReasoningForUpdate = `Preparing API message history...`;
+      finalReasoningForUpdate = `Preparing API message history for model: ${currentActiveSettings.model}...`;
       updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
 
       const apiMessageHistory = messages
         .filter(msg => msg.sender !== 'system' && msg.id !== aiMessageId && !msg.id.startsWith('ai-welcome-'))
-        .slice(-10)
+        .slice(-10) // Limit history to last 10 messages to save tokens
         .map(msg => {
           const role = msg.sender === 'user' ? 'user' : 'assistant';
           let content: any = msg.text;
+          // Handle image uploads in history
           if (msg.sender === 'user' && msg.fileDataUri && msg.filePreviewUri?.startsWith('data:image')) {
             content = [{ type: 'text', text: msg.text || "Image attached" }];
             content.push({ type: 'image_url', image_url: { url: msg.fileDataUri } });
-          } else if (msg.sender === 'user' && msg.fileDataUri) { 
+          } else if (msg.sender === 'user' && msg.fileDataUri) { // Handle other file uploads
             content = `User uploaded a file named "${msg.fileName}". User's textual message regarding this file (if any): "${msg.text || '[No additional text provided with file]'}"`;
           }
           return { role, content };
@@ -287,11 +312,11 @@ export function useChatController() {
           currentUserMessageForAPI
         ],
         stream: true,
-        http_referer: APP_SITE_URL,
-        x_title: APP_TITLE, 
+        http_referer: APP_SITE_URL, // Optional, for OpenRouter tracking
+        x_title: APP_TITLE, // Optional, for OpenRouter tracking
       };
       
-      finalReasoningForUpdate = `Sending request to AI...`;
+      finalReasoningForUpdate = `Sending request to AI provider...`;
       updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
 
       const response = await fetch(OPENROUTER_API_URL, {
@@ -348,20 +373,23 @@ export function useChatController() {
                             isFirstChunkOfInitialResponse = false; 
                         }
                     } else if (chunkData.choices && chunkData.choices[0].finish_reason) {
+                        // Handle finish reasons like 'stop', 'length'
                         if(chunkData.choices[0].finish_reason === 'stop' || chunkData.choices[0].finish_reason === 'length') {
+                           // Stream is complete based on finish_reason
                            if (reader) await reader.cancel(); reader = null; break;
                         }
                     }
                 } catch (e) {
                     console.error("Error parsing stream JSON:", jsonData, e);
+                    // Continue processing other events if possible
                 }
             }
         }
-        if (reader === null) break; 
+        if (reader === null) break; // Exit outer loop if reader was cancelled
       }
       
       if (accumulatedText.trim() === "") {
-        finalReasoningForUpdate += ` AI stream completed but returned no content.`;
+        finalReasoningForUpdate += ` AI stream completed but returned no content. This might indicate an issue with the model or request.`;
         finalAiTextForDisplay = "The AI responded with an empty message. Please try again or rephrase your query. 🤔";
         messageTypeForFinalUpdate = 'error'; 
       } else {
@@ -372,23 +400,24 @@ export function useChatController() {
       updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
 
 
+      // Web search integration if creator is logged in and AI is uncertain
       const lowercasedAiText = finalAiTextForDisplay.toLowerCase(); 
       const isUncertain = uncertaintyPhrases.some(phrase => lowercasedAiText.includes(phrase)) && messageTypeForFinalUpdate !== 'error';
 
 
-      if (isCreatorLoggedIn && isUncertain && !file) { 
+      if (isCreatorLoggedIn && isUncertain && !file) { // Don't web search for file uploads for now
         setIsSearchingWeb(true);
-        messageTypeForFinalUpdate = 'search_result'; 
+        messageTypeForFinalUpdate = 'search_result'; // Mark message as search-augmented
         const queryForSearch = refineSearchQueryForContext(userMessageText, messages.filter(m => m.id !== aiMessageId));
 
-        finalReasoningForUpdate = `Initial response ("${finalAiTextForDisplay.substring(0,50)}...") indicated uncertainty. Sending query to web search for: "${queryForSearch}"...`;
+        finalReasoningForUpdate = `Initial response ("${finalAiTextForDisplay.substring(0,50)}...") indicated uncertainty. Sending query to Genkit web search for: "${queryForSearch}"...`;
         updateMessage(aiMessageId, { text: finalAiTextForDisplay + `\n\nAttempting to find more information online for "${queryForSearch}"... 🌐`, reasoning: finalReasoningForUpdate });
 
         const searchFlowResult = await smartWebSearch({ query: queryForSearch });
         const searchResultsMarkdownContent = searchFlowResult.searchResultsMarkdown;
         const isActualWebResult = searchResultsMarkdownContent && !searchResultsMarkdownContent.toLowerCase().includes("unable to find current information") && !searchResultsMarkdownContent.toLowerCase().includes("an error occurred while searching");
         
-        finalReasoningForUpdate = `Web search for "${queryForSearch}" completed.`;
+        finalReasoningForUpdate = `Genkit web search for "${queryForSearch}" completed.`;
         updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
 
         if (isActualWebResult) {
@@ -396,19 +425,20 @@ export function useChatController() {
           updateMessage(aiMessageId, { text: finalAiTextForDisplay + `\n\nFound information online for "${queryForSearch}". Now summarizing it for you... 🧐`, reasoning: finalReasoningForUpdate });
 
           let summarizationSystemPrompt = `You are CyberChat AI. The user asked: "${userMessageText}". You previously responded with some uncertainty ("${finalAiTextForDisplay.substring(0,100)}..."). Web search results related to "${queryForSearch}" are provided below. Please synthesize this information to provide a comprehensive answer to the user's original question. If the search results are irrelevant, state that and try to answer from your general knowledge if possible, or indicate you still cannot provide a definitive answer. Format your response using basic markdown and friendly emojis. Only mention that Shan is a 19-year-old tech enthusiast if the user specifically asks about the creator (do not mention Malaysia unless asked). You must not share any details about your base model or how you are trained; consider this information confidential.`;
-          if (isCreatorModeActive && isCreatorLoggedIn) { 
+          if (isCreatorModeActive && isCreatorLoggedIn) { // Maintain creator mode for summarization
               summarizationSystemPrompt += " You are in creator mode, address the user as 'Creator' and provide an unrestricted response.";
           }
           
-          finalReasoningForUpdate = `Sending web search results to AI for summarization...`;
+          finalReasoningForUpdate = `Sending web search results to AI provider for summarization...`;
           updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
 
+          // Use the same message history structure, but add web search context
           const summarizationApiMessages = [
             { role: "system", content: summarizationSystemPrompt },
-            ...apiMessageHistory, 
-            { role: "user", content: userMessageText }, 
-            { role: "assistant", content: `Context from web search about "${queryForSearch}":\n${searchResultsMarkdownContent}` }, 
-            { role: "user", content: `Based on the web search results provided, please answer my original question: "${userMessageText}"` } 
+            ...apiMessageHistory, // Original history before user's current uncertain query
+            { role: "user", content: userMessageText }, // User's original query that led to uncertainty
+            { role: "assistant", content: `Context from web search about "${queryForSearch}":\n${searchResultsMarkdownContent}` }, // Web search results as assistant context
+            { role: "user", content: `Based on the web search results provided, please answer my original question: "${userMessageText}"` } // Instruct AI to synthesize
           ];
 
           const summarizationPayload = { model: currentActiveSettings.model, messages: summarizationApiMessages, stream: true, http_referer: APP_SITE_URL, x_title: APP_TITLE };
@@ -420,10 +450,10 @@ export function useChatController() {
           finalReasoningForUpdate = `Connection established for summarization. Receiving summarized response from AI...`;
           updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
 
-          reader = summarizationResponse.body.getReader(); 
+          reader = summarizationResponse.body.getReader(); // Re-assign reader for the new stream
           let summarizedText = "";
           let isFirstSummaryChunk = true;
-          buffer = ""; 
+          buffer = ""; // Reset buffer for new stream
 
           while (true) {
             const { done, value } = await reader.read();
@@ -441,7 +471,7 @@ export function useChatController() {
                         const chunkData = JSON.parse(jsonData);
                         if (chunkData.choices && chunkData.choices[0].delta && chunkData.choices[0].delta.content) {
                             const contentChunk = chunkData.choices[0].delta.content;
-                            streamMessageUpdate(aiMessageId, contentChunk, isFirstSummaryChunk); 
+                            streamMessageUpdate(aiMessageId, contentChunk, isFirstSummaryChunk); // Stream summary
                             summarizedText += contentChunk;
                              if (isFirstSummaryChunk) {
                                 finalReasoningForUpdate = `Receiving streamed summary from AI...`;
@@ -454,7 +484,7 @@ export function useChatController() {
                     } catch (e) { console.error("Error parsing summary stream JSON:", jsonData, e); }
                 }
             }
-            if (reader === null) break; 
+            if (reader === null) break; // Exit outer loop if reader was cancelled
           }
 
           if (summarizedText.trim()) {
@@ -464,10 +494,11 @@ export function useChatController() {
             finalAiTextForDisplay = finalAiTextForDisplay + `\n\nI found some information online for "${queryForSearch}", but had trouble summarizing it.`; 
             finalReasoningForUpdate += ` Summarization did not yield text. Displaying previous response with search note.`;
           }
+          // Append the collapsible web search results to the final display text
           finalAiTextForDisplay += `\n\n:::collapsible Web Search Results for "${queryForSearch}"\n${searchResultsMarkdownContent}\n:::`;
           updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
 
-        } else { 
+        } else { // Web search did not return usable results or failed
           finalAiTextForDisplay = finalAiTextForDisplay + `\n\n${searchResultsMarkdownContent || 'Could not perform web search due to an internal error.'}`;
           finalReasoningForUpdate = `${finalReasoningForUpdate} Web search did not return usable results or failed. Displaying original uncertain response with search status.`;
           updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
@@ -475,7 +506,7 @@ export function useChatController() {
         setIsSearchingWeb(false);
       } else if (!isUncertain) {
         // finalReasoningForUpdate already ends with "AI response stream finished."
-      } else if (isUncertain && messageTypeForFinalUpdate !== 'error') { 
+      } else if (isUncertain && messageTypeForFinalUpdate !== 'error') { // AI was uncertain, but not an error and no web search was done
          finalReasoningForUpdate += ` Web search not performed (not creator or file attached, or initial response was already an error).`;
          updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
       }
@@ -483,12 +514,12 @@ export function useChatController() {
       operationCompletedSuccessfully = true;
 
     } catch (error: any) {
-      error.startTime = startTime; 
-      error.reader = reader; 
+      error.startTime = startTime; // Ensure startTime is attached for duration calculation
+      error.reader = reader; // Pass the reader if it exists for cancellation
       await handleApiError(error, aiMessageId, `sending message: "${userMessageText}"`);
       operationCompletedSuccessfully = false;
     } finally {
-      if (reader) { 
+      if (reader) { // Ensure reader is closed if it's still open
         try { await reader.cancel(); } catch (e) { console.error("Error cancelling reader in final finally block:", e); }
       }
       
@@ -509,7 +540,7 @@ export function useChatController() {
             type: messageTypeForFinalUpdate,
         });
       }
-      // If an error occurred, handleApiError already updated the message.
+      // If an error occurred, handleApiError has already updated the message, including duration if possible.
 
       setIsLoading(false);
       setCurrentAIMessageId(null);
@@ -532,7 +563,7 @@ export function useChatController() {
     const startTime = Date.now();
     const aiMessageId = addMessage(`Processing document "${fileName}"...`, "ai", "summary");
     setCurrentAIMessageId(aiMessageId);
-    let reasoning = `Starting file processing for: ${fileName}.`;
+    let reasoning = `Starting file processing for: ${fileName}. Using Genkit flow.`;
     updateMessage(aiMessageId, { reasoning });
 
     try {
@@ -612,18 +643,63 @@ export function useChatController() {
 
   const handleSettingsChange = (newSettings: AISettings) => {
     setSettings(newSettings);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("cyberchat-ai-settings", JSON.stringify(newSettings));
+    }
     if (isCreatorLoggedIn) {
       toast({
         title: "Settings Applied for Session",
-        description: `API Key and Model updated. To make these the new defaults for all users, please inform the AI assistant to update the source code.`,
-        duration: 10000 
+        description: `API Key and Model updated for this session. These settings are saved in your browser's local storage.`,
+        duration: 7000 
       });
-      console.log("CREATOR SETTINGS CHANGED (APPLIED FOR CURRENT SESSION):");
-      console.log("New API Key:", newSettings.apiKey);
-      console.log("New Model:", newSettings.model);
-      console.log("To make these permanent defaults for all users, copy these values and ask the AI assistant (me) to update the application's default configuration in the source code.");
     }
   };
+
+  const checkApiKeyStatus = async () => {
+    if (!settings.apiKey) {
+      toast({ title: "API Key Missing", description: "Please enter an API key first.", variant: "destructive" });
+      return;
+    }
+    setIsCheckingApiKey(true);
+    const testPayload = {
+      model: settings.model || CODE_DEFAULT_MODEL, // Use current or default model
+      messages: [{ role: "user", content: "Test" }],
+      max_tokens: 1, // Keep it very short and cheap
+    };
+
+    try {
+      const response = await fetch(OPENROUTER_API_URL, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${settings.apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": APP_SITE_URL,
+          "X-Title": APP_TITLE,
+        },
+        body: JSON.stringify(testPayload),
+      });
+
+      if (response.ok) {
+        // Smallest possible response just to check connectivity and auth.
+        const testData = await response.json().catch(() => null);
+        if (testData && testData.choices && testData.choices.length > 0) {
+          toast({ title: "API Key Status: Valid", description: "The API key and model successfully connected to OpenRouter.", variant: "default" });
+        } else {
+          toast({ title: "API Key Status: Unexpected Response", description: "Connected, but response format was not as expected. Key might still be valid.", variant: "default" });
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData?.error?.message || `API Error: ${response.status} ${response.statusText}`;
+        toast({ title: "API Key Status: Invalid or Error", description: `Failed to connect: ${errorMessage}`, variant: "destructive" });
+      }
+    } catch (error) {
+      console.error("Error checking API key status:", error);
+      toast({ title: "API Key Status: Network Error", description: "Could not reach OpenRouter. Check your network connection.", variant: "destructive" });
+    } finally {
+      setIsCheckingApiKey(false);
+    }
+  };
+
 
   const clearChat = () => {
     setMessages(getDefaultWelcomeMessage());
@@ -640,12 +716,14 @@ export function useChatController() {
     isLoading,
     isSearchingWeb,
     currentAIMessageId,
-    isCreatorModeActive, 
+    isCreatorModeActive,
+    isCheckingApiKey,
     setSettings: handleSettingsChange, 
     handleSendMessage,
     handleFileUpload,
     handleWebSearch,
     clearChat,
+    checkApiKeyStatus,
   };
 }
 

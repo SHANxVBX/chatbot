@@ -6,19 +6,33 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { KeyRound, Cog, Server, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { KeyRound, Cog, Server, ShieldAlert, ShieldCheck, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth"; 
 import { cn } from "@/lib/utils";
+import React from "react";
+
 
 interface SettingsViewProps {
   settings: AISettings;
   onSettingsChange: (newSettings: AISettings) => void;
+  onCheckApiKeyStatus: () => void;
+  isCheckingApiKey: boolean;
 }
 
-export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) {
+export function SettingsView({ settings, onSettingsChange, onCheckApiKeyStatus, isCheckingApiKey }: SettingsViewProps) {
   const { toast } = useToast();
   const { isCreatorLoggedIn } = useAuth(); 
+
+  // Local state for inputs to allow typing before saving
+  const [localApiKey, setLocalApiKey] = React.useState(settings.apiKey);
+  const [localModel, setLocalModel] = React.useState(settings.model);
+
+  React.useEffect(() => {
+    setLocalApiKey(settings.apiKey);
+    setLocalModel(settings.model);
+  }, [settings.apiKey, settings.model]);
+
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -30,17 +44,17 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
       });
       return;
     }
-    const formData = new FormData(event.currentTarget);
+    
     const newSettings: AISettings = {
-      apiKey: formData.get("apiKey") as string,
-      model: formData.get("model") as string, 
-      provider: formData.get("provider") as string, 
+      apiKey: localApiKey.trim(),
+      model: localModel.trim(), 
+      provider: settings.provider, // Provider is not directly editable by user here
     };
     onSettingsChange(newSettings);
-    // Toast for settings change is handled in useChatController's handleSettingsChange
   };
 
   const isApiKeySet = settings.apiKey && settings.apiKey.trim() !== "";
+  const isLocalApiKeyEntered = localApiKey && localApiKey.trim() !== "";
 
   return (
     <Card className="glassmorphic border-none shadow-none">
@@ -67,16 +81,41 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
               <KeyRound className="h-4 w-4 text-primary/80" />
               API Key
             </Label>
-            <Input
-              id="apiKey"
-              name="apiKey"
-              type={isCreatorLoggedIn ? "text" : "password"}
-              defaultValue={isCreatorLoggedIn ? settings.apiKey : (isApiKeySet ? "**********" : "")}
-              placeholder={isCreatorLoggedIn ? "Enter your API key" : (isApiKeySet ? "Set by Creator" : "Not Configured")}
-              className="glassmorphic-input"
-              readOnly={!isCreatorLoggedIn}
-              disabled={!isCreatorLoggedIn}
-            />
+            <div className="flex items-center gap-2">
+              <Input
+                id="apiKey"
+                name="apiKey"
+                type={isCreatorLoggedIn ? "text" : "password"}
+                value={isCreatorLoggedIn ? localApiKey : (isApiKeySet ? "**********" : "")}
+                onChange={isCreatorLoggedIn ? (e) => setLocalApiKey(e.target.value) : undefined}
+                placeholder={isCreatorLoggedIn ? "Enter your API key" : (isApiKeySet ? "Set by Creator" : "Not Configured")}
+                className="glassmorphic-input flex-1"
+                readOnly={!isCreatorLoggedIn}
+                disabled={!isCreatorLoggedIn || isCheckingApiKey}
+              />
+              {isCreatorLoggedIn && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onCheckApiKeyStatus}
+                  disabled={!isLocalApiKeyEntered || isCheckingApiKey}
+                  className="whitespace-nowrap"
+                >
+                  {isCheckingApiKey ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                  )}
+                  Check Status
+                </Button>
+              )}
+            </div>
+             {!isApiKeySet && !isCreatorLoggedIn && (
+                 <p className="text-xs text-destructive/80 flex items-center gap-1 mt-1">
+                    <XCircle className="h-3 w-3"/> API Key not configured by creator. AI is offline.
+                 </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="model" className="flex items-center gap-1 text-sm">
@@ -86,12 +125,12 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
             <Input
               id="model"
               name="model"
-              value={isCreatorLoggedIn ? settings.model : (isApiKeySet && settings.model ? settings.model : "Not Configured")}
-              onChange={isCreatorLoggedIn ? (e) => onSettingsChange({...settings, model: e.target.value}) : undefined}
-              placeholder={isCreatorLoggedIn ? "e.g., qwen/qwen3-235b-a22b:free" : (isApiKeySet ? "Set by Creator" : "Not Configured")}
+              value={isCreatorLoggedIn ? localModel : (isApiKeySet && settings.model ? settings.model : "Not Configured")}
+              onChange={isCreatorLoggedIn ? (e) => setLocalModel(e.target.value) : undefined}
+              placeholder={isCreatorLoggedIn ? "e.g., qwen/qwen3-235b-a22b:free" : (isApiKeySet && settings.model ? settings.model : "Not Configured")}
               className={cn("glassmorphic-input", !isCreatorLoggedIn && "select-none pointer-events-none")}
               readOnly={!isCreatorLoggedIn}
-              disabled={!isCreatorLoggedIn}
+              disabled={!isCreatorLoggedIn || isCheckingApiKey}
             />
           </div>
           <div className="space-y-2">
@@ -102,16 +141,16 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
             <Input
               id="provider"
               name="provider" 
-              value={isCreatorLoggedIn ? settings.provider : (isApiKeySet && settings.provider ? settings.provider : "Not Configured")}
-              placeholder={isCreatorLoggedIn ? "e.g., OpenRouter" : (isApiKeySet ? "Set by Creator" : "Not Configured")}
-              className={cn("glassmorphic-input", !isCreatorLoggedIn && "select-none pointer-events-none")}
+              value={settings.provider} // Provider is not directly editable from UI
+              placeholder={isCreatorLoggedIn ? settings.provider : (isApiKeySet && settings.provider ? settings.provider : "Not Configured")}
+              className={cn("glassmorphic-input", !isCreatorLoggedIn && "select-none pointer-events-none", "bg-muted/30 cursor-not-allowed")}
               readOnly // Provider is not user-editable in this app
-              disabled={!isCreatorLoggedIn} 
+              disabled // Always disabled as it's fixed to OpenRouter
             />
           </div>
           {isCreatorLoggedIn && (
-            <Button type="submit" className="w-full bg-primary/80 hover:bg-primary text-primary-foreground">
-              Save Settings
+            <Button type="submit" className="w-full bg-primary/80 hover:bg-primary text-primary-foreground" disabled={isCheckingApiKey || !localApiKey.trim() || !localModel.trim()}>
+              Save Settings for Session
             </Button>
           )}
         </form>
@@ -119,3 +158,4 @@ export function SettingsView({ settings, onSettingsChange }: SettingsViewProps) 
     </Card>
   );
 }
+
