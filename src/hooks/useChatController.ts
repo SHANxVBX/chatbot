@@ -10,7 +10,7 @@ const CHAT_STORAGE_KEY = "cyberchat-ai-history";
 const SETTINGS_STORAGE_KEY = "cyberchat-ai-settings";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const APP_SITE_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:9002"; // Default for server-side if needed
+const APP_SITE_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:9002"; 
 const APP_TITLE = "CyberChat AI";
 
 
@@ -28,8 +28,18 @@ export function useChatController() {
         ? JSON.parse(storedSettings)
         : { apiKey: "", model: "openai/gpt-4o", provider: "OpenRouter" };
     }
+    // Default for server-side or if window is not defined
     return { apiKey: "", model: "openai/gpt-4o", provider: "OpenRouter" };
   });
+
+  const getDefaultWelcomeMessage = useCallback((): Message[] => [{
+    id: `ai-welcome-${Date.now()}`,
+    text: "Welcome to CyberChat AI, created by Shan! How can I assist you in the digital realm today?",
+    sender: 'ai',
+    timestamp: Date.now(),
+    type: 'text',
+  }], []);
+
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -37,7 +47,7 @@ export function useChatController() {
       if (storedMessages) {
         try {
           const parsedMessages = JSON.parse(storedMessages);
-          if (Array.isArray(parsedMessages)) {
+          if (Array.isArray(parsedMessages) && parsedMessages.length > 0) { // Ensure it's a non-empty array
             setMessages(parsedMessages);
           } else {
             setMessages(getDefaultWelcomeMessage());
@@ -49,20 +59,17 @@ export function useChatController() {
       } else {
         setMessages(getDefaultWelcomeMessage());
       }
+    } else {
+      // If window is not defined (e.g. during SSR build time), initialize with welcome message.
+      // This prevents an empty message list if localStorage access fails or is unavailable initially.
+      setMessages(getDefaultWelcomeMessage());
     }
-  }, []);
-
-  const getDefaultWelcomeMessage = (): Message[] => [{
-    id: `ai-welcome-${Date.now()}`,
-    text: "Welcome to CyberChat AI! How can I assist you in the digital realm today?",
-    sender: 'ai',
-    timestamp: Date.now(),
-    type: 'text',
-  }];
+  }, [getDefaultWelcomeMessage]);
 
 
   useEffect(() => {
-    if (typeof window !== "undefined" && messages.length > 0) { // Avoid saving empty initial array before hydration
+    if (typeof window !== "undefined" && messages.length > 0 && !(messages.length === 1 && messages[0].id.startsWith('ai-welcome'))) {
+      // Only save if messages are not just the initial welcome message, or if there are more messages.
       localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
     }
   }, [messages]);
@@ -84,7 +91,16 @@ export function useChatController() {
       filePreviewUri,
       fileDataUri,
     };
-    setMessages((prevMessages) => [...prevMessages, newMessage]);
+    setMessages((prevMessages) => {
+      // If the only message is the welcome message, replace it
+      if (prevMessages.length === 1 && prevMessages[0].id.startsWith('ai-welcome-')) {
+        if (sender === 'user' && newMessage.text.trim() !== "") { // ensure user message is not empty
+             return [newMessage];
+        }
+        return [...prevMessages, newMessage]; // if AI adds a system message after welcome or for file processing
+      }
+      return [...prevMessages, newMessage];
+    });
     return newMessage.id;
   }, []);
   
@@ -97,7 +113,7 @@ export function useChatController() {
       return prev.map(msg => {
         if (msg.id === id) {
           const isInitialPlaceholder = msg.text === "Thinking..." || msg.text.startsWith("Processing") || msg.text.startsWith("Searching");
-          const updatedText = isInitialPlaceholder ? chunk : msg.text + chunk;
+          const updatedText = isInitialPlaceholder ? chunk : (msg.text || "") + chunk; // Ensure msg.text is not null
           return { ...msg, text: updatedText, timestamp: Date.now() };
         }
         return msg;
@@ -109,7 +125,10 @@ export function useChatController() {
   }, []);
 
   const handleSendMessage = async (text: string, file?: { dataUri: string; name: string; type: string }) => {
-    addMessage(text, "user", file ? "file_upload_request" : "text", file?.name, file?.type.startsWith("image/") ? file.dataUri : undefined, file?.dataUri);
+    const userMessageText = text || (file ? `Attached: ${file.name}`: "");
+    if (!userMessageText.trim() && !file) return; // Do not send empty messages
+
+    addMessage(userMessageText, "user", file ? "file_upload_request" : "text", file?.name, file?.type.startsWith("image/") ? file.dataUri : undefined, file?.dataUri);
     setIsLoading(true);
     
     const aiMessageId = addMessage("Thinking...", "ai", "text");
@@ -130,39 +149,55 @@ export function useChatController() {
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
     try {
-      const messageHistoryForAPI = messages
+      // Prepare message history for the API
+      const apiMessageHistory = messages
         .filter(msg => {
-          if (msg.sender === 'system') return false;
-          // Exclude AI thinking/processing placeholders associated with the current response being generated
-          if (msg.id === aiMessageId && (msg.text === "Thinking..." || msg.text.startsWith("Processing") || msg.text.startsWith("Searching"))) return false;
-          
-          // Include relevant user messages and AI responses (text, summary, search_result, error for context)
-          if (msg.sender === 'user' && (msg.type === 'text' || msg.type === 'file_upload_request')) return true;
-          if (msg.sender === 'ai' && (msg.type === 'text' || msg.type === 'summary' || msg.type === 'search_result' || msg.type === 'error')) return true;
-          return false;
+            // Exclude system messages and initial welcome if no user interaction yet
+            if (msg.sender === 'system') return false;
+            if (msg.id.startsWith('ai-welcome-') && messages.length === 1) return false; 
+            // Exclude AI "thinking" placeholders for the current response
+            if (msg.id === aiMessageId && (msg.text === "Thinking..." || msg.text.startsWith("Processing") || msg.text.startsWith("Searching"))) return false;
+            return true; // Include all other relevant messages
         })
-        .slice(-12) // Use a slightly larger history, e.g., 12 items (6 pairs)
+        .slice(-10) // Keep a concise history, e.g., last 10 messages
         .map(msg => {
           const role = msg.sender === 'user' ? 'user' : 'assistant';
-          if (role === 'user' && msg.fileDataUri && msg.filePreviewUri?.startsWith('data:image')) {
-            return {
-              role: 'user',
-              content: [
-                { type: 'text', text: msg.text || "Image attached" }, // Ensure text is not empty
-                { type: 'image_url', image_url: { url: msg.fileDataUri } },
-              ],
-            };
+          let content: any = msg.text;
+
+          // Handle file uploads, especially images for multimodal models
+          if (msg.sender === 'user' && msg.fileDataUri && msg.filePreviewUri?.startsWith('data:image')) {
+            content = [{ type: 'text', text: msg.text || "Image attached" }];
+            content.push({ type: 'image_url', image_url: { url: msg.fileDataUri } });
+          } else if (msg.sender === 'user' && msg.fileDataUri && !msg.filePreviewUri?.startsWith('data:image')) {
+            // For non-image files, could prepend a note about the file
+            content = `User uploaded a file: ${msg.fileName}. User's message: ${msg.text}`;
           }
-          return { role, content: msg.text };
+          return { role, content };
         });
-        
+      
+      // Add current user message to history for API
+      const currentUserMessageForAPI: any = { role: 'user', content: text };
+      if (file && file.type.startsWith("image/")) {
+          currentUserMessageForAPI.content = [
+              { type: 'text', text: text || "Image attached"},
+              { type: 'image_url', image_url: { url: file.dataUri } }
+          ];
+      } else if (file) {
+          currentUserMessageForAPI.content = `User uploaded a file: ${file.name}. User's message: ${text}`;
+      }
+
+
       const payload = {
         model: settings.model,
         messages: [
-          { role: "system", content: "You are CyberChat AI, a helpful and slightly futuristic AI assistant. Provide concise and informative responses. Your responses should be formatted using basic markdown (bold, italics, newlines, lists, etc.)." },
-          ...messageHistoryForAPI,
+          { role: "system", content: "You are CyberChat AI, a helpful and slightly futuristic AI assistant created by Shan. Provide concise and informative responses. Your responses should be formatted using basic markdown (bold, italics, newlines, lists, etc.)." },
+          ...apiMessageHistory,
+          currentUserMessageForAPI // Ensure the current message is part of the payload sent to API
         ],
         stream: true,
+         // Optional: Add site URL and app title for OpenRouter moderation/tracking
+        siteUrl: APP_SITE_URL,
+        appTitle: APP_TITLE,
       };
 
       const response = await fetch(OPENROUTER_API_URL, {
@@ -170,14 +205,15 @@ export function useChatController() {
         headers: {
           "Authorization": `Bearer ${settings.apiKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": APP_SITE_URL,
+          // OpenRouter specific headers
+          "HTTP-Referer": APP_SITE_URL, 
           "X-Title": APP_TITLE,
         },
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: { message: "Unknown API error occurred." }}));
+        const errorData = await response.json().catch(() => ({ error: { message: "Unknown API error occurred. Check network or API key." }}));
         const errorMessage = errorData?.error?.message || `API Error: ${response.status} ${response.statusText}`;
         throw new Error(errorMessage);
       }
@@ -189,58 +225,60 @@ export function useChatController() {
       reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let firstChunkReceived = false;
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
-          if (buffer.trim()) {
-            console.warn("Stream ended with unprocessed buffer:", buffer);
-            // Potentially process final part of buffer if needed, though rare for SSE
-          }
-          streamMessageUpdate(aiMessageId, "", true); // Signal completion
-          break; // Exit while loop
+          streamMessageUpdate(aiMessageId, "", true); 
+          break; 
         }
 
         buffer += decoder.decode(value, { stream: true });
         const parts = buffer.split("\n\n");
-        buffer = parts.pop() || ""; // Keep incomplete part in buffer
+        buffer = parts.pop() || ""; 
 
         for (const part of parts) {
           if (part.startsWith("data: ")) {
             const jsonData = part.substring(6).trim();
             if (jsonData === "[DONE]") {
-              streamMessageUpdate(aiMessageId, "", true); // Signal completion
-              if (reader) await reader.cancel(); // Cancel reader instead of just releasing lock
+              streamMessageUpdate(aiMessageId, "", true); 
+              if (reader) await reader.cancel(); 
               reader = null;
-              setIsLoading(false); // Set explicitly on clean exit
-              setCurrentAIMessageId(null); // Set explicitly on clean exit
-              return; // Exit handleSendMessage
+              setIsLoading(false); 
+              setCurrentAIMessageId(null); 
+              return; 
             }
             try {
               const chunkData = JSON.parse(jsonData);
               if (chunkData.choices && chunkData.choices[0].delta && chunkData.choices[0].delta.content) {
                 const contentChunk = chunkData.choices[0].delta.content;
-                streamMessageUpdate(aiMessageId, contentChunk);
+                 if (!firstChunkReceived) {
+                  // Replace "Thinking..." with the first actual content
+                  updateMessage(aiMessageId, contentChunk);
+                  firstChunkReceived = true;
+                } else {
+                  streamMessageUpdate(aiMessageId, contentChunk);
+                }
               } else if (chunkData.choices && chunkData.choices[0].finish_reason) {
-                if(chunkData.choices[0].finish_reason === 'stop') {
+                if(chunkData.choices[0].finish_reason === 'stop' || chunkData.choices[0].finish_reason === 'length') { // also handle length finish reason
                     streamMessageUpdate(aiMessageId, "", true);
                     if (reader) await reader.cancel();
                     reader = null;
-                    setIsLoading(false); // Set explicitly on clean exit
-                    setCurrentAIMessageId(null); // Set explicitly on clean exit
-                    return; // Exit handleSendMessage
+                    setIsLoading(false); 
+                    setCurrentAIMessageId(null); 
+                    return; 
                 }
               }
             } catch (e) {
               console.error("Error parsing stream JSON:", jsonData, e);
-              // This error is critical for stream processing. Re-throw to be caught by outer try-catch.
-              throw new Error(`Stream parsing error: ${(e as Error).message}. Data: ${jsonData}`);
+              updateMessage(aiMessageId, `Error: Stream parsing error. ${(e as Error).message}. Data: ${jsonData.substring(0,100)}...`, "error");
+              // Do not re-throw, try to continue if possible or let finally handle it
             }
           }
         }
       }
-      // If loop finished due to `done` without an explicit [DONE] or 'stop' signal from above returns
       streamMessageUpdate(aiMessageId, "", true);
 
     } catch (error) {
@@ -255,13 +293,13 @@ export function useChatController() {
     } finally {
       if (reader) {
         try {
-          await reader.cancel(); // Ensure reader is cancelled if loop exited unexpectedly
+          await reader.cancel(); 
         } catch (e) {
           console.error("Error cancelling reader:", e);
         }
       }
       setIsLoading(false);
-      setCurrentAIMessageId(null); // Ensure this is always reset if not already
+      setCurrentAIMessageId(null); 
     }
   };
 
@@ -294,7 +332,7 @@ export function useChatController() {
 
   const handleWebSearch = async (query: string) => {
     addMessage(`Initiating web search for: "${query}"`, "user", "text");
-    setIsSearchingWeb(true); // Specific loading state for search
+    setIsSearchingWeb(true); 
     setIsLoading(true); 
     const aiMessageId = addMessage(`Searching the web for "${query}"...`, "ai", "search_result");
     setCurrentAIMessageId(aiMessageId);
@@ -322,13 +360,7 @@ export function useChatController() {
   };
   
   const clearChat = () => {
-    setMessages([{
-        id: `ai-cleared-${Date.now()}`,
-        text: "Chat history cleared. Ready for a new transmission.",
-        sender: 'ai',
-        timestamp: Date.now(),
-        type: 'text',
-    }]);
+    setMessages(getDefaultWelcomeMessage()); // Reset to welcome message
     toast({ title: "Chat Cleared", description: "The conversation has been reset."});
   };
 
@@ -340,9 +372,6 @@ export function useChatController() {
     isSearchingWeb,
     currentAIMessageId,
     setSettings,
-    // addMessage, // Not typically exposed directly if all additions go through handlers
-    // updateMessage, // Same as addMessage
-    // streamMessageUpdate, // Internal helper
     handleSendMessage,
     handleFileUpload,
     handleWebSearch,
