@@ -2,6 +2,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import type { ReactNode } from 'react'; // Import ReactNode
 import { useRouter } from 'next/navigation';
 
 interface AuthContextType {
@@ -13,7 +14,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const CREATOR_AUTH_KEY = 'creatorLoggedIn';
-// Hardcoded username and HASHED password
+// Updated username and HASHED password
 const CREATOR_USERNAME = "pannikutty";
 // SHA-256 hash of "Hxp652728"
 const HASHED_CREATOR_PASSWORD = "2d8f68c30e08f12b048a43e5658d8e8b1098f3688e576f2e0a5b7774819a5a07";
@@ -27,13 +28,18 @@ async function sha256(str: string): Promise<string> {
     const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     return hashHex;
   }
-  // Fallback for environments where crypto.subtle is not available (should not happen in modern browsers)
+  // Fallback for environments where crypto.subtle is not available
   console.warn('Web Crypto API not available for password hashing. Login may not be secure.');
-  return str; // Insecure fallback, but login will likely fail if hashes don't match.
+  // For server-side or Node.js environments if ever needed (though this hook is client-side)
+  if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+    const crypto = await import('crypto');
+    return crypto.createHash('sha256').update(str).digest('hex');
+  }
+  return str; // Insecure fallback
 }
 
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isCreatorLoggedIn, setIsCreatorLoggedIn] = useState(false);
   const router = useRouter();
 
@@ -82,3 +88,4 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+
