@@ -145,8 +145,8 @@ export default function SettingsPage() {
         </Card>
 
         <Card className="glassmorphic shadow-xl">
-          <CardHeader>
-            <div className="flex items-center gap-2">
+          <CardHeader className="text-center">
+            <div className="flex items-center justify-center gap-2">
                 <UserCircle className="h-5 w-5 text-primary" />
                 <CardTitle className="text-xl">Customize User Avatar</CardTitle>
             </div>
@@ -154,16 +154,16 @@ export default function SettingsPage() {
               Personalize the avatar displayed for your messages in the chat.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6"> {/* Increased overall spacing */}
-            <div className="flex flex-col items-center gap-6 sm:flex-row sm:gap-8"> {/* Increased gap */}
+          <CardContent className="space-y-6">
+            <div className="flex flex-col items-center gap-6">
                 <ShadAvatar className="h-24 w-24 border-2 border-primary/30 shadow-md">
                     <AvatarImage src={avatarPreviewUrl || undefined} alt="User Avatar Preview" data-ai-hint="abstract avatar" />
                     <AvatarFallback className="bg-muted text-muted-foreground">
                         <UserCircle className="h-12 w-12" />
                     </AvatarFallback>
                 </ShadAvatar>
-                <div className="flex-1 space-y-3 w-full">
-                    <Label htmlFor="avatar-upload" className="text-sm font-medium block mb-1.5"> {/* Added block and margin-bottom */}
+                <div className="flex flex-col items-center space-y-3 w-full max-w-xs text-center">
+                    <Label htmlFor="avatar-upload" className="text-sm font-medium">
                         Upload new avatar (Max {MAX_AVATAR_SIZE_MB}MB)
                     </Label>
                     <Input
@@ -176,12 +176,12 @@ export default function SettingsPage() {
                                    file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0
                                    file:text-sm file:font-semibold file:bg-primary/10 file:text-primary
                                    hover:file:bg-primary/20 cursor-pointer
-                                   border border-border/50 rounded-lg p-0.5 glassmorphic-input focus-visible:ring-primary/50" // Refined styling
+                                   border border-border/50 rounded-lg p-0.5 glassmorphic-input focus-visible:ring-primary/50"
                     />
                      <p className="text-xs text-muted-foreground pt-1">Accepted formats: JPG, PNG, GIF, WEBP.</p>
                 </div>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end sm:gap-4"> {/* Increased gap */}
+            <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center sm:gap-4">
                 {settings.userAvatarUri && (
                      <Button variant="outline" onClick={handleRemoveAvatar} className="text-destructive hover:bg-destructive/10 hover:text-destructive-foreground border-destructive/30 hover:border-destructive/50">
                         <Trash2 className="mr-2 h-4 w-4" /> Remove Current Avatar
