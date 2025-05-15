@@ -8,7 +8,7 @@ import { useChatController } from '@/hooks/useChatController';
 import { SettingsView } from '@/components/sidebar/SettingsView'; // Re-using for AI provider settings
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { ArrowLeft, Settings as SettingsIcon } from 'lucide-react';
+import { ArrowLeft, Settings as SettingsIcon, Palette, ToggleRight } from 'lucide-react';
 import Link from 'next/link';
 
 export default function SettingsPage() {
@@ -84,30 +84,56 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Placeholder for future settings sections */}
-        {/* <Card className="glassmorphic shadow-xl">
+        <Card className="glassmorphic shadow-xl">
           <CardHeader>
-            <CardTitle className="text-xl">Chat Interface Customization</CardTitle>
+            <div className="flex items-center gap-2">
+              <Palette className="h-5 w-5 text-primary" />
+              <CardTitle className="text-xl">Chat Interface Customization</CardTitle>
+            </div>
             <CardDescription>
               Personalize the look and feel of the chat. (Coming Soon)
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground">More customization options will be available here.</p>
+            <p className="text-muted-foreground">More customization options for the chat interface will be available here in a future update.</p>
+            {/* Example placeholder for a future setting */}
+            {/* 
+            <div className="mt-4 space-y-2">
+              <Label htmlFor="fontSize">Chat Font Size</Label>
+              <Select disabled>
+                <SelectTrigger id="fontSize"><SelectValue placeholder="Default" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="small">Small</SelectItem>
+                  <SelectItem value="default">Default</SelectItem>
+                  <SelectItem value="large">Large</SelectItem>
+                </SelectContent>
+              </Select>
+            </div> 
+            */}
           </CardContent>
         </Card>
 
         <Card className="glassmorphic shadow-xl">
           <CardHeader>
-            <CardTitle className="text-xl">Feature Toggles</CardTitle>
+            <div className="flex items-center gap-2">
+              <ToggleRight className="h-5 w-5 text-primary" />
+              <CardTitle className="text-xl">Feature Toggles</CardTitle>
+            </div>
             <CardDescription>
               Enable or disable specific chatbot features. (Coming Soon)
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground">Control advanced features from this section.</p>
+            <p className="text-muted-foreground">Control advanced features such as enabling/disabling web search for all users, or other AI capabilities from this section in a future update.</p>
+            {/* Example placeholder for a future toggle */}
+            {/*
+            <div className="mt-4 flex items-center space-x-2">
+              <Switch id="enable-history" disabled />
+              <Label htmlFor="enable-history">Enable Chat History Sync (Cloud)</Label>
+            </div>
+            */}
           </CardContent>
-        </Card> */}
+        </Card>
       </main>
       <footer className="w-full max-w-4xl mt-12 text-center text-sm text-muted-foreground">
         <p>&copy; {new Date().getFullYear()} CyberChat AI. All settings are managed by the Creator.</p>
