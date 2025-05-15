@@ -20,8 +20,9 @@ interface AppSidebarProps {
   isSearchingWeb: boolean;
   chatHistory: { id: string, name: string }[]; 
   onSelectChat: (id: string) => void;
-  onCheckApiKeyStatus: () => void;
+  onCheckSingleApiKeyStatus: (apiKey: string, keyIndex: number) => void; // Updated prop
   isCheckingApiKey: boolean;
+  activeKeyIndexForCheck: number | null; // Added prop
 }
 
 export function AppSidebar({
@@ -32,8 +33,9 @@ export function AppSidebar({
   isSearchingWeb,
   chatHistory = [],
   onSelectChat,
-  onCheckApiKeyStatus,
+  onCheckSingleApiKeyStatus,
   isCheckingApiKey,
+  activeKeyIndexForCheck,
 }: AppSidebarProps) {
   const { isCreatorLoggedIn } = useAuth(); 
 
@@ -80,8 +82,9 @@ export function AppSidebar({
                   <SettingsView
                     settings={settings}
                     onSettingsChange={onSettingsChange}
-                    onCheckApiKeyStatus={onCheckApiKeyStatus}
+                    onCheckSingleApiKeyStatus={onCheckSingleApiKeyStatus} // Updated prop
                     isCheckingApiKey={isCheckingApiKey}
+                    activeKeyIndexForCheck={activeKeyIndexForCheck} // Added prop
                   />
                 </div>
               </AccordionContent>
@@ -126,4 +129,3 @@ export function AppSidebar({
     </Sidebar>
   );
 }
-

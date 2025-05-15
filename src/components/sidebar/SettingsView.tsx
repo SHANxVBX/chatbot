@@ -6,33 +6,43 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { KeyRound, Cog, Server, ShieldAlert, ShieldCheck, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { KeyRound, Cog, Server, ShieldAlert, ShieldCheck, CheckCircle, XCircle, Loader2, Info } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth"; 
 import { cn } from "@/lib/utils";
 import React from "react";
 
-
 interface SettingsViewProps {
   settings: AISettings;
   onSettingsChange: (newSettings: AISettings) => void;
-  onCheckApiKeyStatus: () => void;
+  onCheckSingleApiKeyStatus: (apiKey: string, keyIndex: number) => void; // Updated prop
   isCheckingApiKey: boolean;
+  activeKeyIndexForCheck: number | null; // To show loader on specific key
 }
 
-export function SettingsView({ settings, onSettingsChange, onCheckApiKeyStatus, isCheckingApiKey }: SettingsViewProps) {
+export function SettingsView({
+  settings,
+  onSettingsChange,
+  onCheckSingleApiKeyStatus,
+  isCheckingApiKey,
+  activeKeyIndexForCheck,
+}: SettingsViewProps) {
   const { toast } = useToast();
   const { isCreatorLoggedIn } = useAuth(); 
 
-  // Local state for inputs to allow typing before saving
-  const [localApiKey, setLocalApiKey] = React.useState(settings.apiKey);
+  const [localApiKeys, setLocalApiKeys] = React.useState<string[]>(settings.apiKeys || Array(5).fill(""));
   const [localModel, setLocalModel] = React.useState(settings.model);
 
   React.useEffect(() => {
-    setLocalApiKey(settings.apiKey);
+    setLocalApiKeys(settings.apiKeys && settings.apiKeys.length === 5 ? settings.apiKeys : Array(5).fill(""));
     setLocalModel(settings.model);
-  }, [settings.apiKey, settings.model]);
+  }, [settings.apiKeys, settings.model]);
 
+  const handleApiKeyChange = (index: number, value: string) => {
+    const newKeys = [...localApiKeys];
+    newKeys[index] = value;
+    setLocalApiKeys(newKeys);
+  };
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -46,15 +56,15 @@ export function SettingsView({ settings, onSettingsChange, onCheckApiKeyStatus, 
     }
     
     const newSettings: AISettings = {
-      apiKey: localApiKey.trim(),
+      apiKeys: localApiKeys.map(key => key.trim()),
       model: localModel.trim(), 
-      provider: settings.provider, // Provider is not directly editable by user here
+      provider: settings.provider, // This is mostly for display if direct calling OpenRouter
+      currentApiKeyIndex: settings.currentApiKeyIndex, // Preserve current index or reset as needed
     };
     onSettingsChange(newSettings);
   };
 
-  const isApiKeySet = settings.apiKey && settings.apiKey.trim() !== "";
-  const isLocalApiKeyEntered = localApiKey && localApiKey.trim() !== "";
+  const areAnyApiKeysSet = localApiKeys.some(key => key && key.trim() !== "");
 
   return (
     <Card className="glassmorphic border-none shadow-none">
@@ -73,50 +83,57 @@ export function SettingsView({ settings, onSettingsChange, onCheckApiKeyStatus, 
                 <ShieldCheck className="h-4 w-4" /> Creator mode: Settings are editable.
             </CardDescription>
         )}
+         <CardDescription className="flex items-start gap-1 text-xs text-muted-foreground pt-1">
+            <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
+            <span>Client-side API key storage is less secure. For production, use a backend proxy. API keys are stored in your browser's local storage for this session.</span>
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="apiKey" className="flex items-center gap-1 text-sm">
-              <KeyRound className="h-4 w-4 text-primary/80" />
-              API Key
-            </Label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="apiKey"
-                name="apiKey"
-                type={isCreatorLoggedIn ? "text" : "password"}
-                value={isCreatorLoggedIn ? localApiKey : (isApiKeySet ? "**********" : "")}
-                onChange={isCreatorLoggedIn ? (e) => setLocalApiKey(e.target.value) : undefined}
-                placeholder={isCreatorLoggedIn ? "Enter your API key" : (isApiKeySet ? "Set by Creator" : "Not Configured")}
-                className="glassmorphic-input flex-1"
-                readOnly={!isCreatorLoggedIn}
-                disabled={!isCreatorLoggedIn || isCheckingApiKey}
-              />
-              {isCreatorLoggedIn && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={onCheckApiKeyStatus}
-                  disabled={!isLocalApiKeyEntered || isCheckingApiKey}
-                  className="whitespace-nowrap"
-                >
-                  {isCheckingApiKey ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <CheckCircle className="mr-2 h-4 w-4" />
-                  )}
-                  Check Status
-                </Button>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div key={`apiKeyGroup-${index}`} className="space-y-2">
+              <Label htmlFor={`apiKey-${index}`} className="flex items-center gap-1 text-sm">
+                <KeyRound className="h-4 w-4 text-primary/80" />
+                API Key {index + 1}
+              </Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id={`apiKey-${index}`}
+                  name={`apiKey-${index}`}
+                  type={isCreatorLoggedIn ? "text" : "password"}
+                  value={isCreatorLoggedIn ? localApiKeys[index] : (localApiKeys[index] && localApiKeys[index].trim() !== "" ? "**********" : "")}
+                  onChange={isCreatorLoggedIn ? (e) => handleApiKeyChange(index, e.target.value) : undefined}
+                  placeholder={isCreatorLoggedIn ? `Enter API Key ${index + 1}` : (localApiKeys[index] && localApiKeys[index].trim() !== "" ? "Set by Creator" : "Not Configured")}
+                  className="glassmorphic-input flex-1"
+                  readOnly={!isCreatorLoggedIn}
+                  disabled={!isCreatorLoggedIn || (isCheckingApiKey && activeKeyIndexForCheck === index)}
+                />
+                {isCreatorLoggedIn && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onCheckSingleApiKeyStatus(localApiKeys[index], index)}
+                    disabled={!localApiKeys[index]?.trim() || (isCheckingApiKey && activeKeyIndexForCheck === index)}
+                    className="whitespace-nowrap px-2.5"
+                  >
+                    {(isCheckingApiKey && activeKeyIndexForCheck === index) ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle className="h-4 w-4" />
+                    )}
+                    <span className="ml-1.5">Check</span>
+                  </Button>
+                )}
+              </div>
+               {!localApiKeys[index]?.trim() && !isCreatorLoggedIn && (
+                   <p className="text-xs text-destructive/80 flex items-center gap-1 mt-1">
+                      <XCircle className="h-3 w-3"/> API Key {index + 1} not configured.
+                   </p>
               )}
             </div>
-             {!isApiKeySet && !isCreatorLoggedIn && (
-                 <p className="text-xs text-destructive/80 flex items-center gap-1 mt-1">
-                    <XCircle className="h-3 w-3"/> API Key not configured by creator. AI is offline.
-                 </p>
-            )}
-          </div>
+          ))}
+          
           <div className="space-y-2">
             <Label htmlFor="model" className="flex items-center gap-1 text-sm">
               <Cog className="h-4 w-4 text-primary/80" />
@@ -125,9 +142,9 @@ export function SettingsView({ settings, onSettingsChange, onCheckApiKeyStatus, 
             <Input
               id="model"
               name="model"
-              value={isCreatorLoggedIn ? localModel : (isApiKeySet && settings.model ? settings.model : "Not Configured")}
+              value={isCreatorLoggedIn ? localModel : (areAnyApiKeysSet && settings.model ? settings.model : "Not Configured")}
               onChange={isCreatorLoggedIn ? (e) => setLocalModel(e.target.value) : undefined}
-              placeholder={isCreatorLoggedIn ? "e.g., qwen/qwen3-235b-a22b:free" : (isApiKeySet && settings.model ? settings.model : "Not Configured")}
+              placeholder={isCreatorLoggedIn ? "e.g., qwen/qwen3-235b-a22b:free" : (areAnyApiKeysSet && settings.model ? settings.model : "Not Configured")}
               className={cn("glassmorphic-input", !isCreatorLoggedIn && "select-none pointer-events-none")}
               readOnly={!isCreatorLoggedIn}
               disabled={!isCreatorLoggedIn || isCheckingApiKey}
@@ -136,20 +153,24 @@ export function SettingsView({ settings, onSettingsChange, onCheckApiKeyStatus, 
           <div className="space-y-2">
             <Label htmlFor="provider" className="flex items-center gap-1 text-sm">
               <Server className="h-4 w-4 text-primary/80" /> 
-              Provider
+              Provider (OpenRouter)
             </Label>
             <Input
               id="provider"
               name="provider" 
-              value={settings.provider} // Provider is not directly editable from UI
-              placeholder={isCreatorLoggedIn ? settings.provider : (isApiKeySet && settings.provider ? settings.provider : "Not Configured")}
+              value={settings.provider}
+              placeholder={isCreatorLoggedIn ? settings.provider : (areAnyApiKeysSet && settings.provider ? settings.provider : "Not Configured")}
               className={cn("glassmorphic-input", !isCreatorLoggedIn && "select-none pointer-events-none", "bg-muted/30 cursor-not-allowed")}
-              readOnly // Provider is not user-editable in this app
-              disabled // Always disabled as it's fixed to OpenRouter
+              readOnly
+              disabled
             />
           </div>
           {isCreatorLoggedIn && (
-            <Button type="submit" className="w-full bg-primary/80 hover:bg-primary text-primary-foreground" disabled={isCheckingApiKey || !localApiKey.trim() || !localModel.trim()}>
+            <Button 
+              type="submit" 
+              className="w-full bg-primary/80 hover:bg-primary text-primary-foreground" 
+              disabled={isCheckingApiKey || !localApiKeys.some(key => key.trim()) || !localModel.trim()}
+            >
               Save Settings for Session
             </Button>
           )}
@@ -158,4 +179,3 @@ export function SettingsView({ settings, onSettingsChange, onCheckApiKeyStatus, 
     </Card>
   );
 }
-

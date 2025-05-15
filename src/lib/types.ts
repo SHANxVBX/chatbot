@@ -1,3 +1,4 @@
+
 export type MessageSender = 'user' | 'ai' | 'system';
 
 export interface Message {
@@ -14,7 +15,8 @@ export interface Message {
 }
 
 export interface AISettings {
-  apiKey: string;
+  apiKeys: string[]; // Array of up to 5 API keys
   model: string;
-  provider: string;
+  provider: string; // Remains for consistency, though OpenRouter is directly called client-side
+  currentApiKeyIndex: number; // Index of the current/last successfully used API key
 }
