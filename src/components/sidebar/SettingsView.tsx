@@ -6,18 +6,18 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { KeyRound, Cog, Server, ShieldAlert, ShieldCheck, CheckCircle, XCircle, Loader2, Info } from 'lucide-react';
+import { KeyRound, Cog, Server, ShieldAlert, ShieldCheck, CheckCircle, XCircle, Loader2, Info, CloudCog } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/useAuth"; 
+import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import React from "react";
 
 interface SettingsViewProps {
   settings: AISettings;
   onSettingsChange: (newSettings: AISettings) => void;
-  onCheckSingleApiKeyStatus: (apiKey: string, keyIndex: number) => void; // Updated prop
+  onCheckSingleApiKeyStatus: (apiKey: string, keyIndex: number) => void;
   isCheckingApiKey: boolean;
-  activeKeyIndexForCheck: number | null; // To show loader on specific key
+  activeKeyIndexForCheck: number | null;
 }
 
 export function SettingsView({
@@ -28,15 +28,18 @@ export function SettingsView({
   activeKeyIndexForCheck,
 }: SettingsViewProps) {
   const { toast } = useToast();
-  const { isCreatorLoggedIn } = useAuth(); 
+  const { isCreatorLoggedIn } = useAuth();
 
   const [localApiKeys, setLocalApiKeys] = React.useState<string[]>(settings.apiKeys || Array(5).fill(""));
   const [localModel, setLocalModel] = React.useState(settings.model);
+  const [localGoogleApiKey, setLocalGoogleApiKey] = React.useState(settings.googleApiKey || "");
+
 
   React.useEffect(() => {
     setLocalApiKeys(settings.apiKeys && settings.apiKeys.length === 5 ? settings.apiKeys : Array(5).fill(""));
     setLocalModel(settings.model);
-  }, [settings.apiKeys, settings.model]);
+    setLocalGoogleApiKey(settings.googleApiKey || "");
+  }, [settings.apiKeys, settings.model, settings.googleApiKey]);
 
   const handleApiKeyChange = (index: number, value: string) => {
     const newKeys = [...localApiKeys];
@@ -54,12 +57,14 @@ export function SettingsView({
       });
       return;
     }
-    
+
     const newSettings: AISettings = {
       apiKeys: localApiKeys.map(key => key.trim()),
-      model: localModel.trim(), 
-      provider: settings.provider, // This is mostly for display if direct calling OpenRouter
-      currentApiKeyIndex: settings.currentApiKeyIndex, // Preserve current index or reset as needed
+      model: localModel.trim(),
+      provider: settings.provider,
+      currentApiKeyIndex: settings.currentApiKeyIndex,
+      userAvatarUri: settings.userAvatarUri, // Preserve user avatar
+      googleApiKey: localGoogleApiKey.trim(),
     };
     onSettingsChange(newSettings);
   };
@@ -70,7 +75,7 @@ export function SettingsView({
     <Card className="glassmorphic border-none shadow-none">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          <Cog className="h-5 w-5 text-primary" /> 
+          <Cog className="h-5 w-5 text-primary" />
           AI Provider Settings
         </CardTitle>
         {!isCreatorLoggedIn && (
@@ -94,7 +99,7 @@ export function SettingsView({
             <div key={`apiKeyGroup-${index}`} className="space-y-2">
               <Label htmlFor={`apiKey-${index}`} className="flex items-center gap-1 text-sm">
                 <KeyRound className="h-4 w-4 text-primary/80" />
-                API Key {index + 1}
+                OpenRouter API Key {index + 1}
               </Label>
               <div className="flex items-center gap-2">
                 <Input
@@ -103,7 +108,7 @@ export function SettingsView({
                   type={isCreatorLoggedIn ? "text" : "password"}
                   value={isCreatorLoggedIn ? localApiKeys[index] : (localApiKeys[index] && localApiKeys[index].trim() !== "" ? "**********" : "")}
                   onChange={isCreatorLoggedIn ? (e) => handleApiKeyChange(index, e.target.value) : undefined}
-                  placeholder={isCreatorLoggedIn ? `Enter API Key ${index + 1}` : (localApiKeys[index] && localApiKeys[index].trim() !== "" ? "Set by Creator" : "Not Configured")}
+                  placeholder={isCreatorLoggedIn ? `Enter OpenRouter API Key ${index + 1}` : (localApiKeys[index] && localApiKeys[index].trim() !== "" ? "Set by Creator" : "Not Configured")}
                   className="glassmorphic-input flex-1"
                   readOnly={!isCreatorLoggedIn}
                   disabled={!isCreatorLoggedIn || (isCheckingApiKey && activeKeyIndexForCheck === index)}
@@ -133,11 +138,11 @@ export function SettingsView({
               )}
             </div>
           ))}
-          
+
           <div className="space-y-2">
             <Label htmlFor="model" className="flex items-center gap-1 text-sm">
               <Cog className="h-4 w-4 text-primary/80" />
-              Model
+              OpenRouter Model
             </Label>
             <Input
               id="model"
@@ -150,14 +155,38 @@ export function SettingsView({
               disabled={!isCreatorLoggedIn || isCheckingApiKey}
             />
           </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="googleApiKey" className="flex items-center gap-1 text-sm">
+              <CloudCog className="h-4 w-4 text-primary/80" />
+              Google AI API Key (File Processing)
+            </Label>
+            <Input
+              id="googleApiKey"
+              name="googleApiKey"
+              type={isCreatorLoggedIn ? "text" : "password"}
+              value={isCreatorLoggedIn ? localGoogleApiKey : (settings.googleApiKey && settings.googleApiKey.trim() !== "" ? "**********" : "")}
+              onChange={isCreatorLoggedIn ? (e) => setLocalGoogleApiKey(e.target.value) : undefined}
+              placeholder={isCreatorLoggedIn ? "Enter Google AI API Key" : (settings.googleApiKey && settings.googleApiKey.trim() !== "" ? "Set by Creator" : "Not Configured")}
+              className="glassmorphic-input"
+              readOnly={!isCreatorLoggedIn}
+              disabled={!isCreatorLoggedIn}
+            />
+            <p className="text-xs text-muted-foreground pt-1">
+              Used by Genkit flows for features like image description and document summarization.
+              Typically configured via server environment variables for deployed apps.
+            </p>
+          </div>
+
+
           <div className="space-y-2">
             <Label htmlFor="provider" className="flex items-center gap-1 text-sm">
-              <Server className="h-4 w-4 text-primary/80" /> 
-              AI Provider
+              <Server className="h-4 w-4 text-primary/80" />
+              Primary AI Provider (Chat)
             </Label>
             <Input
               id="provider"
-              name="provider" 
+              name="provider"
               value={isCreatorLoggedIn ? settings.provider : (areAnyApiKeysSet && settings.provider ? "Configured by Creator" : "Not Configured")}
               placeholder={isCreatorLoggedIn ? settings.provider : (areAnyApiKeysSet && settings.provider ? "Configured by Creator" : "Not Configured")}
               className={cn("glassmorphic-input", !isCreatorLoggedIn && "select-none pointer-events-none", "bg-muted/30 cursor-not-allowed")}
@@ -165,10 +194,11 @@ export function SettingsView({
               disabled
             />
           </div>
+
           {isCreatorLoggedIn && (
-            <Button 
-              type="submit" 
-              className="w-full bg-primary/80 hover:bg-primary text-primary-foreground" 
+            <Button
+              type="submit"
+              className="w-full bg-primary/80 hover:bg-primary text-primary-foreground"
               disabled={isCheckingApiKey || !localApiKeys.some(key => key.trim()) || !localModel.trim()}
             >
               Save Settings for Session
@@ -179,4 +209,3 @@ export function SettingsView({
     </Card>
   );
 }
-

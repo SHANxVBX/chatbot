@@ -15,10 +15,11 @@ export interface Message {
 }
 
 export interface AISettings {
-  apiKeys: string[]; // Array of up to 5 API keys
-  model: string;
-  provider: string; // Remains for consistency, though OpenRouter is directly called client-side
-  currentApiKeyIndex: number; // Index of the current/last successfully used API key
+  apiKeys: string[]; // Array of up to 5 API keys for OpenRouter
+  model: string; // For OpenRouter
+  provider: string; // Label, e.g., "OpenRouter"
+  currentApiKeyIndex: number; // Index for OpenRouter keys
   userAvatarUri?: string; // Data URI for custom user avatar
+  googleApiKey?: string; // API Key for Google AI Services (e.g., Gemini for file processing)
 }
 
