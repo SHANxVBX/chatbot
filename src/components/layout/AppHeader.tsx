@@ -52,7 +52,7 @@ export function AppHeader() {
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-border/30 bg-background/80 px-4 shadow-md backdrop-blur-lg md:px-6">
       <div className="flex items-center gap-2">
-        <SidebarTrigger className="md:hidden" />
+        <SidebarTrigger /> {/* Removed md:hidden to make it always visible */}
         <CyberLogoIcon className="h-8 w-8 text-primary" />
         <h1 className="text-xl font-bold tracking-tighter" style={{ textShadow: '0 0 5px hsl(var(--primary)/0.7)'}}>
           CyberChat <span className="text-primary">AI</span>
