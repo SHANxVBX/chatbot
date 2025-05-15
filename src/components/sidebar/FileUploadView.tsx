@@ -1,11 +1,12 @@
+
 "use client";
 
 import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Label } from "@/components/ui/label"; // Label might not be needed if sr-only
 import { Progress } from "@/components/ui/progress";
-import { UploadCloud, FileText, ImageIcon, FileType, AlertCircle } from "lucide-react";
+import { UploadCloud, FileText, ImageIcon, FileType, AlertCircle, Trash2, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 
@@ -15,6 +16,8 @@ interface FileUploadViewProps {
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ACCEPTED_FILE_TYPES = ".txt,.jpg,.jpeg,.png,.pdf";
+const ACCEPTED_FILE_TYPES_DISPLAY = "TXT, JPG, PNG, PDF";
+
 
 export function FileUploadView({ onFileUpload }: FileUploadViewProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -30,14 +33,16 @@ export function FileUploadView({ onFileUpload }: FileUploadViewProps) {
       if (file.size > MAX_FILE_SIZE) {
         setError(`File size exceeds 10MB limit.`);
         setSelectedFile(null);
+        toast({ title: "File Error", description: `File size exceeds 10MB limit.`, variant: "destructive" });
         if (fileInputRef.current) fileInputRef.current.value = "";
         return;
       }
-      // Basic type check based on extension
+      
       const fileExtension = "." + file.name.split('.').pop()?.toLowerCase();
       if (!ACCEPTED_FILE_TYPES.split(',').includes(fileExtension)) {
-        setError(`Invalid file type. Accepted: ${ACCEPTED_FILE_TYPES}`);
+        setError(`Invalid file type. Accepted: ${ACCEPTED_FILE_TYPES_DISPLAY}`);
         setSelectedFile(null);
+        toast({ title: "File Error", description: `Invalid file type. Accepted: ${ACCEPTED_FILE_TYPES_DISPLAY}`, variant: "destructive" });
         if (fileInputRef.current) fileInputRef.current.value = "";
         return;
       }
@@ -56,37 +61,44 @@ export function FileUploadView({ onFileUpload }: FileUploadViewProps) {
 
     setIsUploading(true);
     setError(null);
+    setUploadProgress(0); // Reset progress before starting
 
-    // Simulate upload progress
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 10;
-      if (progress <= 100) {
-        setUploadProgress(progress);
-      } else {
-        clearInterval(interval);
-      }
-    }, 100);
+    // Simulate upload progress more granularly
+    const simulateProgress = () => {
+      let currentProgress = 0;
+      const interval = setInterval(() => {
+        currentProgress += Math.random() * 10 + 5; // More varied progress
+        if (currentProgress >= 100) {
+          setUploadProgress(100);
+          clearInterval(interval);
+        } else {
+          setUploadProgress(currentProgress);
+        }
+      }, 150); // Faster updates
+      return interval;
+    };
+    
+    const progressInterval = simulateProgress();
 
     try {
       const reader = new FileReader();
       reader.onloadend = () => {
-        clearInterval(interval);
+        clearInterval(progressInterval);
         setUploadProgress(100);
         onFileUpload(reader.result as string, selectedFile.name, selectedFile.type);
         toast({
           title: "File Ready",
-          description: `${selectedFile.name} processed and ready for AI.`,
+          description: `${selectedFile.name} processed. Ready for AI.`,
         });
-        setSelectedFile(null);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        setTimeout(() => {
+        setSelectedFile(null); // Clear selection after successful processing
+        if (fileInputRef.current) fileInputRef.current.value = ""; // Reset file input
+        setTimeout(() => { // Reset UI after a short delay
           setIsUploading(false);
           setUploadProgress(0);
-        }, 1000);
+        }, 1200);
       };
       reader.onerror = () => {
-        clearInterval(interval);
+        clearInterval(progressInterval);
         setError("Error reading file.");
         setIsUploading(false);
         setUploadProgress(0);
@@ -98,7 +110,7 @@ export function FileUploadView({ onFileUpload }: FileUploadViewProps) {
       };
       reader.readAsDataURL(selectedFile);
     } catch (err) {
-      clearInterval(interval);
+      clearInterval(progressInterval);
       setError("Upload failed. Please try again.");
       setIsUploading(false);
       setUploadProgress(0);
@@ -110,11 +122,14 @@ export function FileUploadView({ onFileUpload }: FileUploadViewProps) {
     }
   };
 
-  const getFileIcon = () => {
-    if (!selectedFile) return <FileType className="h-6 w-6 text-muted-foreground" />;
-    if (selectedFile.type.startsWith("image/")) return <ImageIcon className="h-6 w-6 text-primary" />;
-    if (selectedFile.type === "application/pdf") return <FileText className="h-6 w-6 text-red-500" />; // Lucide doesn't have a PDF icon
-    if (selectedFile.type === "text/plain") return <FileText className="h-6 w-6 text-green-500" />;
+  const getFileIcon = (fileType?: string, fileName?: string) => {
+    const type = fileType || selectedFile?.type;
+    const name = fileName || selectedFile?.name;
+
+    if (!type || !name) return <FileType className="h-6 w-6 text-muted-foreground" />;
+    if (type.startsWith("image/")) return <ImageIcon className="h-6 w-6 text-primary" />;
+    if (type === "application/pdf" || name.endsWith(".pdf")) return <FileText className="h-6 w-6 text-red-600 dark:text-red-400" />;
+    if (type === "text/plain" || name.endsWith(".txt")) return <FileText className="h-6 w-6 text-green-600 dark:text-green-400" />;
     return <FileType className="h-6 w-6 text-muted-foreground" />;
   };
 
@@ -125,52 +140,100 @@ export function FileUploadView({ onFileUpload }: FileUploadViewProps) {
           <UploadCloud className="h-5 w-5 text-primary" />
           Upload Document
         </CardTitle>
-        <CardDescription>Supports .txt, .jpg, .png, .pdf (max 10MB).</CardDescription>
+        <CardDescription>Attach a file for AI summarization or analysis.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div>
-          <Label htmlFor="file-upload" className="sr-only">Choose file</Label>
-          <Input
-            id="file-upload"
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            accept={ACCEPTED_FILE_TYPES}
-            className="glassmorphic-input file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+        {/* File Input Trigger Area */}
+        {!selectedFile && !isUploading && (
+          <Button
+            variant="outline"
+            className="w-full h-auto glassmorphic-input border-2 border-dashed border-primary/30 hover:border-primary/60 hover:bg-primary/10 py-6 flex flex-col items-center justify-center group transition-all duration-200 ease-in-out"
+            onClick={() => fileInputRef.current?.click()}
             disabled={isUploading}
-          />
-        </div>
+            aria-label="Choose file to upload"
+          >
+            <UploadCloud className="h-10 w-10 text-primary/60 mb-2 group-hover:text-primary transition-colors" />
+            <span className="text-base font-medium text-foreground/80 group-hover:text-primary transition-colors">
+              Choose File
+            </span>
+            <span className="text-xs text-muted-foreground mt-1">
+              {ACCEPTED_FILE_TYPES_DISPLAY} (Max 10MB)
+            </span>
+          </Button>
+        )}
+        <Input
+          id="file-upload"
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          accept={ACCEPTED_FILE_TYPES}
+          className="hidden"
+          disabled={isUploading}
+        />
 
+        {/* Selected File Display (before processing) */}
         {selectedFile && !isUploading && (
-          <div className="mt-2 flex items-center gap-2 p-2 rounded-md bg-muted/30">
-            {getFileIcon()}
-            <span className="text-sm truncate">{selectedFile.name}</span>
+          <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-card/50 border border-primary/40 shadow-sm glassmorphic">
+            <div className="flex items-center gap-2.5 min-w-0"> {/* min-w-0 for truncate */}
+              {getFileIcon()}
+              <span className="text-sm font-medium text-foreground truncate" title={selectedFile.name}>
+                {selectedFile.name}
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-destructive/80 hover:text-destructive hover:bg-destructive/10 rounded-full"
+              onClick={() => {
+                setSelectedFile(null);
+                setError(null);
+                if (fileInputRef.current) fileInputRef.current.value = "";
+              }}
+              aria-label="Remove file"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
           </div>
         )}
 
-        {isUploading && (
-          <div className="space-y-1">
-            <Progress value={uploadProgress} className="w-full h-2 [&>div]:bg-gradient-to-r [&>div]:from-secondary [&>div]:to-primary" />
-            <p className="text-xs text-center text-primary">Processing: {uploadProgress}%</p>
+        {/* Upload Progress & File Info During Upload */}
+        {isUploading && selectedFile && (
+          <div className="space-y-2 p-3 rounded-lg bg-card/50 border border-primary/20 shadow-sm glassmorphic">
+            <div className="flex items-center gap-2.5 text-sm mb-1">
+              {getFileIcon(selectedFile.type, selectedFile.name)}
+              <span className="font-medium truncate">{selectedFile.name}</span>
+            </div>
+            <Progress value={uploadProgress} className="w-full h-2.5 [&>div]:bg-gradient-to-r [&>div]:from-secondary [&>div]:to-primary" />
+            <p className="text-xs text-center text-primary font-medium">Processing: {Math.round(uploadProgress)}%</p>
           </div>
         )}
         
         {error && (
-          <div className="flex items-center gap-2 text-sm text-destructive p-2 rounded-md bg-destructive/10">
-            <AlertCircle className="h-4 w-4" />
-            <p>{error}</p>
+          <div className="flex items-center gap-2.5 text-sm text-destructive p-3 rounded-lg bg-destructive/10 border border-destructive/30 glassmorphic">
+            <AlertCircle className="h-5 w-5 flex-shrink-0" />
+            <p className="font-medium">{error}</p>
           </div>
         )}
 
         <Button
           onClick={handleUpload}
           disabled={!selectedFile || isUploading}
-          className="w-full bg-primary/80 hover:bg-primary text-primary-foreground"
+          className="w-full bg-primary/90 hover:bg-primary text-primary-foreground transition-all duration-200 ease-in-out transform hover:scale-[1.02] focus:ring-2 focus:ring-ring focus:ring-offset-2"
         >
-          {isUploading ? "Processing..." : "Process with AI"}
-          <UploadCloud className="ml-2 h-4 w-4" />
+          {isUploading ? (
+            <>
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              Processing...
+            </>
+          ) : (
+            <>
+              Process with AI
+              <UploadCloud className="ml-2 h-5 w-5" />
+            </>
+          )}
         </Button>
       </CardContent>
     </Card>
   );
 }
+
