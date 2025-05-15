@@ -1,8 +1,9 @@
+
 // @ts-nocheck
 "use client";
 
 import type { Message } from "@/lib/types";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Added AvatarImage
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { User, Bot, AlertTriangle, FileText, Search, CheckCircle, BrainCog } from "lucide-react";
@@ -13,12 +14,9 @@ import React from "react";
 const renderText = (text: string): React.ReactNode[] => {
   if (!text) return [];
 
-  // Regex to split by markdown and custom collapsible syntax
-  // Groups: 1=newline, 2=bold, 3=italic, 4=inline_code, 5=code_block, 6=collapsible_full, 7=collapsible_title, 8=collapsible_content
   const collapsibleRegex = /^(:::collapsible\s+(.+?)\n([\s\S]*?):::)$/m;
   const markdownElementsRegex = /(\n)|(\*\*.*?\*\*)|(\*.*?\*)|(`.+?`)|(```[\s\S]+?```)/g;
 
-  // First, handle collapsible sections as whole blocks
   const parts = text.split(new RegExp(`(${collapsibleRegex.source})`, 'gm')).filter(Boolean);
 
   return parts.flatMap((part, index) => {
@@ -48,14 +46,12 @@ const renderText = (text: string): React.ReactNode[] => {
             {title}
           </summary>
           <div className="mt-2 text-xs prose-sm dark:prose-invert max-w-none prose-p:text-foreground/90 prose-li:text-foreground/90 prose-a:text-accent hover:prose-a:text-accent/80">
-             {/* Recursively render content within collapsible ensuring it's an array */}
             {renderText(content)}
           </div>
         </details>
       );
     }
 
-    // If not a collapsible block, process for other markdown elements
     return part.split(markdownElementsRegex).filter(Boolean).map((subPart, subIndex) => {
       const key = `part-${index}-sub-${subIndex}`;
       if (subPart === '\n') {
@@ -78,13 +74,18 @@ const renderText = (text: string): React.ReactNode[] => {
   });
 };
 
+interface ChatMessageItemProps {
+  message: Message;
+  userAvatarUri?: string; // Added userAvatarUri prop
+}
 
-export function ChatMessageItem({ message }: { message: Message }) {
+export function ChatMessageItem({ message, userAvatarUri }: ChatMessageItemProps) {
   const isUser = message.sender === "user";
   const isSystem = message.sender === "system";
 
   const getAvatarIcon = () => {
-    if (isUser) return <User className="h-6 w-6" />;
+    // For user, AvatarImage will be used if userAvatarUri exists, so this is fallback
+    if (isUser) return <User className="h-6 w-6" />; 
     if (message.sender === "ai") {
       if (message.type === "error") return <AlertTriangle className="h-6 w-6 text-destructive" />;
       if (message.type === "summary") return <FileText className="h-6 w-6 text-secondary" />;
@@ -171,8 +172,11 @@ export function ChatMessageItem({ message }: { message: Message }) {
       </div>
       {isUser && (
         <Avatar className="h-8 w-8 md:h-10 md:w-10 border-2 border-accent/50 shadow-md flex-shrink-0">
+          {userAvatarUri ? (
+            <AvatarImage src={userAvatarUri} alt="User Avatar" />
+          ) : null}
           <AvatarFallback className="bg-gradient-to-br from-accent/30 to-secondary/30 text-accent">
-            {getAvatarIcon()}
+            {getAvatarIcon()} 
           </AvatarFallback>
         </Avatar>
       )}

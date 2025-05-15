@@ -13,6 +13,7 @@ import { Trash2 } from "lucide-react";
 export function AppLayout() {
   const {
     messages,
+    settings, // Get settings to access userAvatarUri
     isLoading,
     isSearchingWeb,
     currentAIMessageId,
@@ -58,7 +59,12 @@ export function AppLayout() {
                 <span className="hidden md:inline">Clear Chat</span>
               </Button>
             </div>
-            <ChatMessageList messages={messages} isLoading={isLoading} currentAIMessageId={currentAIMessageId} />
+            <ChatMessageList 
+              messages={messages} 
+              isLoading={isLoading} 
+              currentAIMessageId={currentAIMessageId}
+              userAvatarUri={settings.userAvatarUri} // Pass userAvatarUri
+            />
             <ChatInputBar onSendMessage={handleSendMessage} isLoading={isLoading} />
           </main>
         </div>
@@ -66,3 +72,4 @@ export function AppLayout() {
     </SidebarProvider>
   );
 }
+

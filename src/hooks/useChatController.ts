@@ -9,8 +9,11 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 
 const CHAT_STORAGE_KEY = "cyberchat-ai-history";
-const SETTINGS_STORAGE_KEY = "cyberchat-ai-settings-v2"; // Changed key to reflect new structure
+const SETTINGS_STORAGE_KEY = "cyberchat-ai-settings-v2";
 
+// Client-side call, API key is embedded here or managed by creator in UI
+// THIS IS A HUGE SECURITY RISK FOR PRODUCTION. KEYS SHOULD BE ON A SERVER.
+// For this project, we are proceeding with client-side keys as per explicit request.
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const APP_SITE_URL = typeof window !== "undefined" ? window.location.origin : "http://localhost:9002";
 const APP_TITLE = "CyberChat AI by Shan";
@@ -25,9 +28,10 @@ const uncertaintyPhrases = [
 
 const clientStopWords = new Set(['a', 'an', 'the', 'is', 'are', 'was', 'were', 'what', 'who', 'when', 'where', 'why', 'how', 'of', 'for', 'in', 'on', 'at', 'by']);
 
-const CODE_DEFAULT_API_KEYS: string[] = Array(5).fill(""); // Array of 5 empty strings
+// Default API keys (array of 5 empty strings). Creator fills these via UI.
+const CODE_DEFAULT_API_KEYS: string[] = Array(5).fill("");
 const CODE_DEFAULT_MODEL = "qwen/qwen3-235b-a22b:free";
-const CODE_DEFAULT_PROVIDER = "OpenRouter"; // Still used for display/context
+const CODE_DEFAULT_PROVIDER = "OpenRouter";
 
 function refineSearchQueryForContext(originalQuery: string, chatHistory: Message[]): string {
   let query = originalQuery.toLowerCase();
@@ -60,7 +64,6 @@ export function useChatController() {
   const [isCheckingApiKey, setIsCheckingApiKey] = useState(false);
   const [activeKeyIndexForCheck, setActiveKeyIndexForCheck] = useState<number | null>(null);
 
-
   const { toast } = useToast();
   const { isCreatorLoggedIn } = useAuth();
 
@@ -69,6 +72,7 @@ export function useChatController() {
     model: CODE_DEFAULT_MODEL,
     provider: CODE_DEFAULT_PROVIDER,
     currentApiKeyIndex: 0,
+    userAvatarUri: undefined,
   });
 
   const getDefaultWelcomeMessage = useCallback((): Message[] => [{
@@ -102,7 +106,6 @@ export function useChatController() {
       if (storedSettings) {
         try {
           const parsedSettings = JSON.parse(storedSettings) as Partial<AISettings>;
-          // Merge stored settings with defaults, ensuring apiKeys is always an array of 5
           const currentApiKeys = Array.isArray(parsedSettings.apiKeys)
             ? [...parsedSettings.apiKeys, ...Array(5).fill("")].slice(0, 5)
             : [...CODE_DEFAULT_API_KEYS];
@@ -113,6 +116,7 @@ export function useChatController() {
             apiKeys: currentApiKeys,
             model: parsedSettings.model || CODE_DEFAULT_MODEL,
             currentApiKeyIndex: typeof parsedSettings.currentApiKeyIndex === 'number' ? parsedSettings.currentApiKeyIndex : 0,
+            userAvatarUri: parsedSettings.userAvatarUri || undefined,
           }));
         } catch (e) {
           console.error("Failed to parse settings from localStorage", e);
@@ -170,7 +174,6 @@ export function useChatController() {
                                 currentText.startsWith("Connection established. Receiving response") || 
                                 currentText.startsWith("Connection established for summarization."); 
 
-
           const updatedText = isPlaceholder ? chunk : currentText + chunk;
           return { ...msg, text: updatedText, timestamp: Date.now() };
         }
@@ -184,7 +187,8 @@ export function useChatController() {
     console.error(`API Error${context ? ` (${context})` : ''}${apiKeyIndex !== undefined ? ` with Key ${apiKeyIndex + 1}` : ''}:`, error);
 
     const duration = error.startTime ? parseFloat(((Date.now() - error.startTime) / 1000).toFixed(1)) : undefined;
-    let finalReasoning = `An error occurred during the AI process${context ? ` for ${context}` : ''}${apiKeyIndex !== undefined ? ` using API Key ${apiKeyIndex + 1}`: ''}.`;
+    let finalReasoning = `An error occurred during the AI process${context ? ` for ${context}` : ''}.`;
+    // Removed API Key Index from user-facing reasoning for security with client-side keys
     finalReasoning += ` The specific error was: "${errorMsg}".`;
     finalReasoning += ` This could be due to issues with the AI service, network connectivity, or the input provided. Processing halted.`;
 
@@ -193,13 +197,13 @@ export function useChatController() {
     }
 
     updateMessage(messageId, {
-      text: `Error${context ? ` with ${context}` : ''}${apiKeyIndex !== undefined ? ` (Key ${apiKeyIndex + 1})` : ''}: ${errorMsg}`,
+      text: `Error${context ? ` with ${context}` : ''}: ${errorMsg}`,
       type: "error",
       reasoning: finalReasoning,
       duration: duration,
     });
 
-    toast({ title: `AI Error${context ? `: ${context}` : ''}${apiKeyIndex !== undefined ? ` (Key ${apiKeyIndex + 1})`:''}`, description: errorMsg, variant: "destructive" });
+    toast({ title: `AI Error${context ? `: ${context}` : ''}`, description: errorMsg, variant: "destructive" });
   }, [updateMessage, toast]);
 
   const handleSendMessage = async (text: string, file?: { dataUri: string; name: string; type: string }) => {
@@ -260,26 +264,24 @@ export function useChatController() {
     let operationCompletedSuccessfully = false;
     let accumulatedText = "";
     let isFirstChunkOfInitialResponse = true;
-    let currentTryCount = 0;
+    let currentMessageTryCount = 0; // Renamed from currentTryCount for clarity
 
     const validApiKeys = settings.apiKeys.filter(key => key && key.trim() !== "");
     if (validApiKeys.length === 0) {
-        addMessage("No API keys configured. A creator needs to log in and set them up via the settings panel.", "ai", "error");
+        updateMessage(aiMessageId, {text: "Error: AI Provider API Key is not configured. A creator needs to log in and set it up via the settings panel.", type: "error", reasoning: "AI processing halted: No valid API keys found in settings.", duration: parseFloat(((Date.now() - startTime) / 1000).toFixed(1))});
         setIsLoading(false);
         setCurrentAIMessageId(null);
-        updateMessage(aiMessageId, {text: "Error: No API keys configured.", type: "error", reasoning: "AI processing halted: No valid API keys found in settings."});
         return;
     }
 
-    let currentApiKeyIndexToUse = settings.currentApiKeyIndex % validApiKeys.length; // Start with the last known good or default
-    let keysAttemptedInThisRound = 0;
+    let currentApiKeyLoopIndex = settings.currentApiKeyIndex % validApiKeys.length;
+    let keysAttemptedInThisUserMessage = 0;
 
-    while (currentTryCount < MAX_CLIENT_RETRIES_PER_MESSAGE && keysAttemptedInThisRound < validApiKeys.length) {
-        currentTryCount++;
-        keysAttemptedInThisRound++;
-        const apiKeyToUse = validApiKeys[currentApiKeyIndexToUse];
+    while (currentMessageTryCount < MAX_CLIENT_RETRIES_PER_MESSAGE && keysAttemptedInThisUserMessage < validApiKeys.length) {
+        const apiKeyToUse = validApiKeys[currentApiKeyLoopIndex];
+        const keyDisplayIndex = settings.apiKeys.indexOf(apiKeyToUse); // Get original index for display
 
-        finalReasoningForUpdate = `Attempting API call (Try ${currentTryCount}, Key Index ${currentApiKeyIndexToUse + 1}/${validApiKeys.length}). Preparing message history...`;
+        finalReasoningForUpdate = `Attempting API call (Overall Try ${currentMessageTryCount + 1}, Key ${keyDisplayIndex + 1}/${validApiKeys.length}). Preparing message history...`;
         updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
 
         try {
@@ -321,11 +323,11 @@ export function useChatController() {
                 currentUserMessageForAPI
               ],
               stream: true,
-              http_referer: APP_SITE_URL,
-              x_title: APP_TITLE,
+              http_referer: APP_SITE_URL, 
+              x_title: APP_TITLE, 
             };
             
-            finalReasoningForUpdate = `Sending request to OpenRouter (Key Index ${currentApiKeyIndexToUse + 1})...`;
+            finalReasoningForUpdate = `Sending request to AI provider...`;
             updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
 
             const response = await fetch(OPENROUTER_API_URL, {
@@ -344,24 +346,25 @@ export function useChatController() {
                 const errorMessage = errorData?.error?.message || `API Error: ${response.status} ${response.statusText}`;
                 
                 if (response.status === 401 || response.status === 429) { // Unauthorized or Rate Limited
-                    console.warn(`API Key ${currentApiKeyIndexToUse + 1} failed: ${errorMessage}. Trying next key.`);
-                    finalReasoningForUpdate = `API Key ${currentApiKeyIndexToUse + 1} failed (${response.status}). Trying next key...`;
+                    console.warn(`API Key ${keyDisplayIndex + 1} failed: ${errorMessage}. Trying next key.`);
+                    finalReasoningForUpdate = `API Key ${keyDisplayIndex + 1} failed (${response.status}). Preparing to try next available key...`;
                     updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
-                    currentApiKeyIndexToUse = (currentApiKeyIndexToUse + 1) % validApiKeys.length;
-                    await new Promise(resolve => setTimeout(resolve, 500)); // Small delay before trying next key
-                    continue; // Retry with the next key
+                    currentApiKeyLoopIndex = (currentApiKeyLoopIndex + 1) % validApiKeys.length;
+                    keysAttemptedInThisUserMessage++;
+                    await new Promise(resolve => setTimeout(resolve, 750)); // Small delay before trying next key
+                    continue; 
                 }
-                throw new Error(errorMessage); // Other non-retryable (for key-switching) error
+                throw new Error(errorMessage); 
             }
             if (!response.body) throw new Error("Response body is null.");
 
-            finalReasoningForUpdate = `Connection established (Key Index ${currentApiKeyIndexToUse + 1}). Receiving response...`;
+            finalReasoningForUpdate = `Connection established. Receiving response...`;
             updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
             
             reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = ""; 
-            accumulatedText = ""; // Reset for this attempt
+            accumulatedText = ""; 
             isFirstChunkOfInitialResponse = true;
 
             while (true) {
@@ -385,7 +388,7 @@ export function useChatController() {
                               streamMessageUpdate(aiMessageId, contentChunk, isFirstChunkOfInitialResponse);
                               accumulatedText += contentChunk;
                               if (isFirstChunkOfInitialResponse) {
-                                  finalReasoningForUpdate = `Receiving streamed response from AI (Key Index ${currentApiKeyIndexToUse + 1})...`;
+                                  finalReasoningForUpdate = `Receiving streamed response from AI...`;
                                   updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
                                   isFirstChunkOfInitialResponse = false; 
                               }
@@ -400,40 +403,31 @@ export function useChatController() {
               if (reader === null) break; 
             }
             
-            // Successfully got a response with this key
-            setSettings(prev => ({ ...prev, currentApiKeyIndex: currentApiKeyIndexToUse })); // Make this key sticky
+            setSettings(prev => ({ ...prev, currentApiKeyIndex: validApiKeys.indexOf(apiKeyToUse) })); 
             operationCompletedSuccessfully = true;
-            break; // Exit retry loop
+            break; 
 
         } catch (error: any) {
-          if (keysAttemptedInThisRound >= validApiKeys.length && currentTryCount >= MAX_CLIENT_RETRIES_PER_MESSAGE) {
-            // All keys tried for this message, and max retries reached
-            error.startTime = startTime;
-            error.reader = reader;
-            await handleApiError(error, aiMessageId, `sending message: "${userMessageText}"`, currentApiKeyIndexToUse);
-            operationCompletedSuccessfully = false;
-            break; // Exit while loop
-          } else if (keysAttemptedInThisRound >= validApiKeys.length) {
-             // All keys tried, reset for another round of retries if currentTryCount allows
-             keysAttemptedInThisRound = 0;
-             currentApiKeyIndexToUse = (settings.currentApiKeyIndex + 1) % validApiKeys.length; // Start next round from next key
-             console.warn(`All keys failed in one round for message "${userMessageText}". Retrying (Attempt ${currentTryCount + 1}/${MAX_CLIENT_RETRIES_PER_MESSAGE}).`);
-             await new Promise(resolve => setTimeout(resolve, 1000)); // Wait before starting new round
+          console.error(`Error with key index ${keyDisplayIndex} (Overall Try ${currentMessageTryCount + 1}):`, error);
+          // This key failed with a non-401/429 error, or stream error. Try next key.
+          finalReasoningForUpdate = `Error with API Key ${keyDisplayIndex + 1}. Preparing to try next available key...`;
+          updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
+          currentApiKeyLoopIndex = (currentApiKeyLoopIndex + 1) % validApiKeys.length;
+          keysAttemptedInThisUserMessage++;
+          await new Promise(resolve => setTimeout(resolve, 500));
+          // Only increment currentMessageTryCount if we've looped through all keys once
+          if (keysAttemptedInThisUserMessage % validApiKeys.length === 0) {
+            currentMessageTryCount++;
+            if(currentMessageTryCount < MAX_CLIENT_RETRIES_PER_MESSAGE) {
+                console.warn(`All keys failed in one round for message "${userMessageText}". Retrying (Overall Attempt ${currentMessageTryCount + 1}/${MAX_CLIENT_RETRIES_PER_MESSAGE}).`);
+                 await new Promise(resolve => setTimeout(resolve, 1000)); // Wait before starting new round
+            }
           }
-          // Error with current key, but more keys/retries might be available - loop will continue or specific error already handled.
-          // Specific handling for 401/429 is inside the try block. This catch is for other errors.
-           console.error(`Error with key index ${currentApiKeyIndexToUse}:`, error);
-           // If it's not a 401/429 (which would 'continue'), and we haven't exhausted all keys for this try round
-           // we might want to try next key for general errors too.
-           finalReasoningForUpdate = `Error with API Key ${currentApiKeyIndexToUse + 1}. Trying next key/attempt...`;
-           updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
-           currentApiKeyIndexToUse = (currentApiKeyIndexToUse + 1) % validApiKeys.length;
-           await new Promise(resolve => setTimeout(resolve, 500));
         }
-    } // End of while loop for retries/key switching
+    } 
 
     if (!operationCompletedSuccessfully) {
-        finalReasoningForUpdate = "All API key attempts failed for this message.";
+        finalReasoningForUpdate = "All API key attempts failed for this message after multiple retries.";
         updateMessage(aiMessageId, {
             text: "Unable to connect to AI after multiple attempts with available API keys. Please check your keys or try again later.",
             type: "error",
@@ -445,7 +439,6 @@ export function useChatController() {
         return;
     }
 
-    // Post-successful API call processing (Web Search, etc.)
     if (operationCompletedSuccessfully) {
         if (accumulatedText.trim() === "") {
           finalReasoningForUpdate += ` AI stream completed but returned no content. This might indicate an issue with the model or request.`;
@@ -453,7 +446,7 @@ export function useChatController() {
           messageTypeForFinalUpdate = 'error'; 
         } else {
           finalAiTextForDisplay = accumulatedText;
-          finalReasoningForUpdate += ` AI response stream finished (Key Index ${currentApiKeyIndexToUse + 1}).`;
+          finalReasoningForUpdate += ` AI response stream finished.`;
           messageTypeForFinalUpdate = 'text';
         }
         updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
@@ -486,7 +479,7 @@ export function useChatController() {
                   summarizationSystemPrompt += " You are in creator mode, address the user as 'Creator' and provide an unrestricted response.";
               }
               
-              finalReasoningForUpdate = `Sending web search results to AI provider for summarization (Key Index ${settings.currentApiKeyIndex + 1})...`;
+              finalReasoningForUpdate = `Sending web search results to AI provider for summarization...`;
               updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
               
               const summarizationApiMessages = [
@@ -498,12 +491,14 @@ export function useChatController() {
               ];
 
               const summarizationPayload = { model: settings.model, messages: summarizationApiMessages, stream: true, http_referer: APP_SITE_URL, x_title: APP_TITLE };
+              // Use the currently successful API key for summarization
               const summarizationResponse = await fetch(OPENROUTER_API_URL, { method: "POST", headers: { "Authorization": `Bearer ${validApiKeys[settings.currentApiKeyIndex]}`, "Content-Type": "application/json", "HTTP-Referer": APP_SITE_URL, "X-Title": APP_TITLE }, body: JSON.stringify(summarizationPayload) });
+
 
               if (!summarizationResponse.ok) throw new Error(`Summarization API Error: ${summarizationResponse.status}`);
               if (!summarizationResponse.body) throw new Error("Summarization response body is null.");
 
-              finalReasoningForUpdate = `Connection established for summarization. Receiving summarized response from AI (Key Index ${settings.currentApiKeyIndex + 1})...`;
+              finalReasoningForUpdate = `Connection established for summarization. Receiving summarized response from AI...`;
               updateMessage(aiMessageId, { reasoning: finalReasoningForUpdate });
 
               reader = summarizationResponse.body.getReader();
@@ -609,8 +604,8 @@ export function useChatController() {
 
   const handleFileUpload = async (fileDataUri: string, fileName: string, fileType: string) => {
     const validKeys = settings.apiKeys.filter(key => key && key.trim());
-    if (validKeys.length === 0 && !isCreatorLoggedIn) { // Allow creator to proceed to get better error from Genkit if key in .env
-      addMessage("AI Provider API Key is not configured. File processing requires an API key.", "ai", "error");
+    if (validKeys.length === 0) { 
+      addMessage("AI Provider API Key is not configured. File processing requires an API key. A creator needs to log in and set one up via the settings panel.", "ai", "error");
       return;
     }
 
@@ -625,9 +620,7 @@ export function useChatController() {
     try {
       reasoning = `Sending document "${fileName}" to Genkit AI for summarization...`;
       updateMessage(aiMessageId, { reasoning });
-      // Note: Genkit flows usually rely on backend config for API keys.
-      // If this is purely client-side, summarizeUpload would need to be adapted
-      // or use a client-side model if possible.
+      
       const result = await summarizeUpload({ fileDataUri });
       reasoning = `Document "${fileName}" summarization complete via Genkit.`;
       updateMessage(aiMessageId, {
@@ -658,11 +651,10 @@ export function useChatController() {
       });
       return;
     }
-    // Similar to file upload, Genkit flows typically use backend config.
-    // This check is for client-side UI consistency.
+    
     const validKeys = settings.apiKeys.filter(key => key && key.trim());
     if (validKeys.length === 0) {
-       addMessage("AI Provider API Key is not configured for web search.", "ai", "error");
+       addMessage("AI Provider API Key is not configured for web search. A creator needs to log in and set one up via the settings panel.", "ai", "error");
       return;
     }
 
@@ -698,7 +690,6 @@ export function useChatController() {
   };
 
   const handleSettingsChange = (newSettings: AISettings) => {
-    // Ensure apiKeys is always an array of 5
     const updatedApiKeys = Array.isArray(newSettings.apiKeys)
         ? [...newSettings.apiKeys, ...Array(5).fill("")].slice(0, 5)
         : [...CODE_DEFAULT_API_KEYS];
@@ -706,6 +697,7 @@ export function useChatController() {
     const finalSettings = {
         ...newSettings,
         apiKeys: updatedApiKeys,
+        userAvatarUri: newSettings.userAvatarUri // ensure userAvatarUri is preserved/updated
     };
     setSettings(finalSettings);
     if (typeof window !== "undefined") {
@@ -714,10 +706,9 @@ export function useChatController() {
     if (isCreatorLoggedIn) {
       toast({
         title: "Settings Applied for Session",
-        description: `API Keys and Model updated. These settings are saved in your browser's local storage.`,
+        description: `API Keys, Model, and Avatar updated. These settings are saved in your browser's local storage.`,
         duration: 7000 
       });
-      console.log("Client-side API keys saved to local storage. For these to be hardcoded defaults for all users, please inform the AI assistant in the chat with the new values to update the source code.");
     }
   };
 
@@ -793,3 +784,4 @@ export function useChatController() {
     checkSingleApiKeyStatus,
   };
 }
+

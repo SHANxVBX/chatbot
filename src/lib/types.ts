@@ -19,4 +19,6 @@ export interface AISettings {
   model: string;
   provider: string; // Remains for consistency, though OpenRouter is directly called client-side
   currentApiKeyIndex: number; // Index of the current/last successfully used API key
+  userAvatarUri?: string; // Data URI for custom user avatar
 }
+

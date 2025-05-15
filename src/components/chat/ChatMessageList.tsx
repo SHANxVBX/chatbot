@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { Message } from "@/lib/types";
@@ -10,9 +11,10 @@ interface ChatMessageListProps {
   messages: Message[];
   isLoading?: boolean;
   currentAIMessageId?: string | null;
+  userAvatarUri?: string; // Added userAvatarUri prop
 }
 
-export function ChatMessageList({ messages, isLoading, currentAIMessageId }: ChatMessageListProps) {
+export function ChatMessageList({ messages, isLoading, currentAIMessageId, userAvatarUri }: ChatMessageListProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
 
@@ -20,7 +22,7 @@ export function ChatMessageList({ messages, isLoading, currentAIMessageId }: Cha
     if (viewportRef.current) {
       viewportRef.current.scrollTo({ top: viewportRef.current.scrollHeight, behavior: "smooth" });
     }
-  }, [messages, isLoading, currentAIMessageId]); // Added currentAIMessageId to dependencies
+  }, [messages, isLoading, currentAIMessageId]);
 
   if (messages.length === 0 && !isLoading) {
     return (
@@ -38,9 +40,9 @@ export function ChatMessageList({ messages, isLoading, currentAIMessageId }: Cha
     <ScrollArea className="flex-1 p-4 md:p-6" ref={scrollAreaRef} viewportRef={viewportRef}>
       <div className="space-y-4">
         {messages.map((msg) => (
-          <ChatMessageItem key={msg.id} message={msg} />
+          <ChatMessageItem key={msg.id} message={msg} userAvatarUri={userAvatarUri} /> // Pass userAvatarUri
         ))}
-        {isLoading && !currentAIMessageId && ( // General loading state if no specific AI message is being typed
+        {isLoading && !currentAIMessageId && (
            <div className="flex justify-start items-start gap-3 my-3 md:my-4">
              <Bot className="h-8 w-8 md:h-10 md:w-10 text-primary flex-shrink-0 p-1.5 border-2 border-primary/50 rounded-full shadow-md bg-gradient-to-br from-primary/30 to-secondary/30" />
              <div className="max-w-[70%] md:max-w-[65%] rounded-xl shadow-lg bg-card/80 text-card-foreground rounded-bl-none glassmorphic p-3">
@@ -56,3 +58,4 @@ export function ChatMessageList({ messages, isLoading, currentAIMessageId }: Cha
     </ScrollArea>
   );
 }
+

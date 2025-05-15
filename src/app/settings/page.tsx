@@ -1,15 +1,24 @@
 
 "use client";
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, ChangeEvent, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useChatController } from '@/hooks/useChatController';
-import { SettingsView } from '@/components/sidebar/SettingsView'; // Re-using for AI provider settings
+import { SettingsView } from '@/components/sidebar/SettingsView';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { ArrowLeft, Settings as SettingsIcon, Palette, ToggleRight } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Avatar as ShadAvatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Renamed to avoid conflict
+import { ArrowLeft, Settings as SettingsIcon, Palette, ToggleRight, UserCircle, UploadCloud, Trash2 } from 'lucide-react';
 import Link from 'next/link';
+import { useToast } from '@/hooks/use-toast';
+import Image from 'next/image'; // For preview
+
+const MAX_AVATAR_SIZE_MB = 2;
+const ACCEPTED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
 
 export default function SettingsPage() {
   const { isCreatorLoggedIn } = useAuth();
@@ -21,15 +30,66 @@ export default function SettingsPage() {
     isCheckingApiKey,
     activeKeyIndexForCheck,
   } = useChatController();
+  const { toast } = useToast();
+
+  const [selectedAvatarFile, setSelectedAvatarFile] = useState<File | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(settings.userAvatarUri || null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
 
   useEffect(() => {
     if (!isCreatorLoggedIn) {
-      router.push('/login'); // Redirect to login if not creator
+      router.push('/login');
     }
   }, [isCreatorLoggedIn, router]);
 
+  useEffect(() => { // Sync preview URL if settings change externally
+    setAvatarPreviewUrl(settings.userAvatarUri || null);
+  }, [settings.userAvatarUri]);
+
+
+  const handleAvatarFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.size > MAX_AVATAR_SIZE_MB * 1024 * 1024) {
+        toast({ title: "Avatar Too Large", description: `Max file size is ${MAX_AVATAR_SIZE_MB}MB.`, variant: "destructive" });
+        return;
+      }
+      if (!ACCEPTED_AVATAR_TYPES.includes(file.type)) {
+        toast({ title: "Invalid File Type", description: "Please select a JPG, PNG, GIF, or WEBP image.", variant: "destructive" });
+        return;
+      }
+      setSelectedAvatarFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setAvatarPreviewUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSetAvatar = () => {
+    if (avatarPreviewUrl && avatarPreviewUrl !== settings.userAvatarUri) {
+      setSettings({ ...settings, userAvatarUri: avatarPreviewUrl });
+      toast({ title: "Avatar Updated", description: "Your new user avatar has been saved for this session." });
+    } else if (!avatarPreviewUrl && settings.userAvatarUri){
+       // This case handles removal if preview is cleared but old URI exists
+      setSettings({ ...settings, userAvatarUri: undefined });
+      toast({ title: "Avatar Removed", description: "Your custom user avatar has been removed." });
+    }
+    setSelectedAvatarFile(null); // Clear selection
+  };
+
+  const handleRemoveAvatar = () => {
+    setSettings({ ...settings, userAvatarUri: undefined });
+    setAvatarPreviewUrl(null);
+    setSelectedAvatarFile(null);
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
+    toast({ title: "Avatar Removed", description: "Your custom user avatar has been removed." });
+  };
+
+
   if (!isCreatorLoggedIn) {
-    // Optional: Show a loading or access denied message while redirecting
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-background to-muted/30 p-4">
         <Card className="w-full max-w-md shadow-2xl glassmorphic">
@@ -61,7 +121,7 @@ export default function SettingsPage() {
           <h1 className="text-3xl font-bold text-foreground">Application Settings</h1>
         </div>
         <p className="text-muted-foreground mt-1">
-          Manage AI provider credentials and other application configurations.
+          Manage AI provider credentials, user appearance, and other application configurations.
         </p>
       </header>
 
@@ -87,6 +147,54 @@ export default function SettingsPage() {
         <Card className="glassmorphic shadow-xl">
           <CardHeader>
             <div className="flex items-center gap-2">
+                <UserCircle className="h-5 w-5 text-primary" />
+                <CardTitle className="text-xl">Customize User Avatar</CardTitle>
+            </div>
+            <CardDescription>
+              Personalize the avatar displayed for your messages in the chat.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col items-center gap-4 sm:flex-row">
+                <ShadAvatar className="h-24 w-24 border-2 border-primary/30 shadow-md">
+                    <AvatarImage src={avatarPreviewUrl || undefined} alt="User Avatar Preview" data-ai-hint="abstract avatar" />
+                    <AvatarFallback className="bg-muted text-muted-foreground">
+                        <UserCircle className="h-12 w-12" />
+                    </AvatarFallback>
+                </ShadAvatar>
+                <div className="flex-1 space-y-3">
+                    <Label htmlFor="avatar-upload" className="text-sm font-medium">Upload new avatar (Max {MAX_AVATAR_SIZE_MB}MB)</Label>
+                    <Input
+                        id="avatar-upload"
+                        ref={avatarInputRef}
+                        type="file"
+                        accept={ACCEPTED_AVATAR_TYPES.join(',')}
+                        onChange={handleAvatarFileChange}
+                        className="glassmorphic-input file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                    />
+                     <p className="text-xs text-muted-foreground">Accepted formats: JPG, PNG, GIF, WEBP.</p>
+                </div>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                {settings.userAvatarUri && (
+                     <Button variant="outline" onClick={handleRemoveAvatar} className="text-destructive hover:bg-destructive/10 hover:text-destructive-foreground">
+                        <Trash2 className="mr-2 h-4 w-4" /> Remove Current Avatar
+                    </Button>
+                )}
+                <Button 
+                    onClick={handleSetAvatar} 
+                    disabled={!selectedAvatarFile && avatarPreviewUrl === settings.userAvatarUri}
+                    className="bg-primary/90 hover:bg-primary"
+                >
+                    <UploadCloud className="mr-2 h-4 w-4" /> Set Avatar
+                </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="glassmorphic shadow-xl">
+          <CardHeader>
+            <div className="flex items-center gap-2">
               <Palette className="h-5 w-5 text-primary" />
               <CardTitle className="text-xl">Chat Interface Customization</CardTitle>
             </div>
@@ -96,20 +204,6 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground">More customization options for the chat interface will be available here in a future update.</p>
-            {/* Example placeholder for a future setting */}
-            {/* 
-            <div className="mt-4 space-y-2">
-              <Label htmlFor="fontSize">Chat Font Size</Label>
-              <Select disabled>
-                <SelectTrigger id="fontSize"><SelectValue placeholder="Default" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="small">Small</SelectItem>
-                  <SelectItem value="default">Default</SelectItem>
-                  <SelectItem value="large">Large</SelectItem>
-                </SelectContent>
-              </Select>
-            </div> 
-            */}
           </CardContent>
         </Card>
 
@@ -125,13 +219,6 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground">Control advanced features such as enabling/disabling web search for all users, or other AI capabilities from this section in a future update.</p>
-            {/* Example placeholder for a future toggle */}
-            {/*
-            <div className="mt-4 flex items-center space-x-2">
-              <Switch id="enable-history" disabled />
-              <Label htmlFor="enable-history">Enable Chat History Sync (Cloud)</Label>
-            </div>
-            */}
           </CardContent>
         </Card>
       </main>
@@ -141,3 +228,4 @@ export default function SettingsPage() {
     </div>
   );
 }
+
