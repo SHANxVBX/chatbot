@@ -42,7 +42,7 @@ export function AppHeader() {
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 animate-pulse rounded-md bg-muted" />
           <div className="h-8 w-8 animate-pulse rounded-md bg-muted" />
-          {isCreatorLoggedIn && <div className="h-8 w-8 animate-pulse rounded-md bg-muted" />}
+          <div className="h-8 w-8 animate-pulse rounded-md bg-muted" /> {/* Placeholder for settings button */}
           <div className="h-8 w-20 animate-pulse rounded-md bg-muted" />
         </div>
       </header>
@@ -63,13 +63,12 @@ export function AppHeader() {
           {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
         </Button>
         
-        {isCreatorLoggedIn && (
-          <Button variant="ghost" size="icon" asChild aria-label="Settings">
-            <Link href="/settings">
-              <Settings className="h-5 w-5" />
-            </Link>
-          </Button>
-        )}
+        {/* Settings button now visible to all users */}
+        <Button variant="ghost" size="icon" asChild aria-label="Settings">
+          <Link href="/settings">
+            <Settings className="h-5 w-5" />
+          </Link>
+        </Button>
 
         {isCreatorLoggedIn ? (
           <Button variant="ghost" onClick={logout} className="text-sm">
