@@ -145,7 +145,7 @@ export function SettingsView({
               value={isCreatorLoggedIn ? localModel : (areAnyApiKeysSet && settings.model ? settings.model : "Not Configured")}
               onChange={isCreatorLoggedIn ? (e) => setLocalModel(e.target.value) : undefined}
               placeholder={isCreatorLoggedIn ? "e.g., qwen/qwen3-235b-a22b:free" : (areAnyApiKeysSet && settings.model ? settings.model : "Not Configured")}
-              className={cn("glassmorphic-input", !isCreatorLoggedIn && "select-none pointer-events-none")}
+              className={cn("glassmorphic-input", !isCreatorLoggedIn && (!areAnyApiKeysSet || !settings.model) && "select-none pointer-events-none")}
               readOnly={!isCreatorLoggedIn}
               disabled={!isCreatorLoggedIn || isCheckingApiKey}
             />
@@ -153,13 +153,13 @@ export function SettingsView({
           <div className="space-y-2">
             <Label htmlFor="provider" className="flex items-center gap-1 text-sm">
               <Server className="h-4 w-4 text-primary/80" /> 
-              Provider (OpenRouter)
+              AI Provider
             </Label>
             <Input
               id="provider"
               name="provider" 
-              value={settings.provider}
-              placeholder={isCreatorLoggedIn ? settings.provider : (areAnyApiKeysSet && settings.provider ? settings.provider : "Not Configured")}
+              value={isCreatorLoggedIn ? settings.provider : (areAnyApiKeysSet && settings.provider ? "Configured by Creator" : "Not Configured")}
+              placeholder={isCreatorLoggedIn ? settings.provider : (areAnyApiKeysSet && settings.provider ? "Configured by Creator" : "Not Configured")}
               className={cn("glassmorphic-input", !isCreatorLoggedIn && "select-none pointer-events-none", "bg-muted/30 cursor-not-allowed")}
               readOnly
               disabled
@@ -179,3 +179,4 @@ export function SettingsView({
     </Card>
   );
 }
+
