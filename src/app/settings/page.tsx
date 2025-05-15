@@ -10,19 +10,19 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Avatar as ShadAvatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Renamed to avoid conflict
+import { Avatar as ShadAvatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ArrowLeft, Settings as SettingsIcon, Palette, ToggleRight, UserCircle, UploadCloud, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
-import Image from 'next/image'; // For preview
+// import Image from 'next/image'; // Not strictly needed if using AvatarImage for preview
 
 const MAX_AVATAR_SIZE_MB = 2;
 const ACCEPTED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
 
 export default function SettingsPage() {
-  const { isCreatorLoggedIn } = useAuth();
-  const router = useRouter();
+  const { isCreatorLoggedIn } = useAuth(); // Still used to control creator-specific sections
+  // const router = useRouter(); // No longer redirecting the whole page
   const {
     settings,
     setSettings,
@@ -36,14 +36,10 @@ export default function SettingsPage() {
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(settings.userAvatarUri || null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
+  // Removed the useEffect that redirected non-creators for the entire page.
+  // The page is now accessible to all. Specific sections will be controlled below.
 
-  useEffect(() => {
-    if (!isCreatorLoggedIn) {
-      router.push('/login');
-    }
-  }, [isCreatorLoggedIn, router]);
-
-  useEffect(() => { // Sync preview URL if settings change externally
+  useEffect(() => { // Sync preview URL if settings change externally (e.g. loaded from localStorage)
     setAvatarPreviewUrl(settings.userAvatarUri || null);
   }, [settings.userAvatarUri]);
 
@@ -73,11 +69,11 @@ export default function SettingsPage() {
       setSettings({ ...settings, userAvatarUri: avatarPreviewUrl });
       toast({ title: "Avatar Updated", description: "Your new user avatar has been saved for this session." });
     } else if (!avatarPreviewUrl && settings.userAvatarUri){
-       // This case handles removal if preview is cleared but old URI exists
       setSettings({ ...settings, userAvatarUri: undefined });
       toast({ title: "Avatar Removed", description: "Your custom user avatar has been removed." });
     }
-    setSelectedAvatarFile(null); // Clear selection
+    setSelectedAvatarFile(null); 
+    if (avatarInputRef.current) avatarInputRef.current.value = "";
   };
 
   const handleRemoveAvatar = () => {
@@ -88,24 +84,8 @@ export default function SettingsPage() {
     toast({ title: "Avatar Removed", description: "Your custom user avatar has been removed." });
   };
 
-
-  if (!isCreatorLoggedIn) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-background to-muted/30 p-4">
-        <Card className="w-full max-w-md shadow-2xl glassmorphic">
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p>You must be logged in as a creator to access this page.</p>
-            <Button onClick={() => router.push('/login')} className="mt-4">
-              Go to Login
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // The page content is now rendered for all users.
+  // Creator-specific functionality within components like SettingsView is handled internally in those components.
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-gradient-to-br from-background to-muted/30 p-4 sm:p-6 md:p-8">
@@ -121,16 +101,23 @@ export default function SettingsPage() {
           <h1 className="text-3xl font-bold text-foreground">Application Settings</h1>
         </div>
         <p className="text-muted-foreground mt-1">
-          Manage AI provider credentials, user appearance, and other application configurations.
+          {isCreatorLoggedIn 
+            ? "Manage AI provider credentials, user appearance, and other application configurations."
+            : "Customize your chat experience."
+          }
         </p>
       </header>
 
       <main className="w-full max-w-4xl space-y-8">
+        {/* AI Provider Configuration - View-only for non-creators, editable for creators */}
         <Card className="glassmorphic shadow-xl">
           <CardHeader>
             <CardTitle className="text-xl">AI Provider Configuration</CardTitle>
             <CardDescription>
-              Set up API keys and model preferences for the AI service. Changes are saved to your browser's local storage for your session.
+              {isCreatorLoggedIn
+                ? "Set up API keys and model preferences for the AI service. Changes are saved to your browser's local storage for your session."
+                : "AI provider settings are managed by the application creator."
+              }
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -144,6 +131,7 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+        {/* Customize User Avatar - Available to ALL users */}
         <Card className="glassmorphic shadow-xl">
           <CardHeader className="text-center">
             <div className="flex items-center justify-center gap-2">
@@ -224,12 +212,14 @@ export default function SettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground">Control advanced features such as enabling/disabling web search for all users, or other AI capabilities from this section in a future update.</p>
+            <p className="text-muted-foreground">Control advanced features such as enabling/disabling web search, or other AI capabilities from this section in a future update.</p>
           </CardContent>
         </Card>
       </main>
       <footer className="w-full max-w-4xl mt-12 text-center text-sm text-muted-foreground">
-        <p>&copy; {new Date().getFullYear()} CyberChat AI. All settings are managed by the Creator.</p>
+        <p>&copy; {new Date().getFullYear()} CyberChat AI. 
+        {isCreatorLoggedIn ? " All settings are managed by the Creator." : " Some settings are creator-exclusive."}
+        </p>
       </footer>
     </div>
   );
