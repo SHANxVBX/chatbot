@@ -1,41 +1,38 @@
 
 "use client";
 
-import type { AISettings } from "@/lib/types";
-import { Sidebar, SidebarContent, SidebarHeader, SidebarFooter, SidebarGroup, SidebarGroupLabel, SidebarSeparator, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
+import type { AISettings } from "@/lib/types"; // AISettings might not be needed here anymore
+import { Sidebar, SidebarContent, SidebarHeader, SidebarFooter, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { SettingsView } from "@/components/sidebar/SettingsView";
+// SettingsView is no longer directly used here
 import { FileUploadView } from "@/components/sidebar/FileUploadView";
 import { WebSearchView } from "@/components/sidebar/WebSearchView";
 import { CyberLogoIcon } from "@/components/icons/CyberLogoIcon";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Cog, UploadCloud, Globe, History, ChevronRight } from 'lucide-react';
+import { UploadCloud, Globe, History, ChevronRight } from 'lucide-react'; // Removed Cog
 import { useAuth } from "@/hooks/useAuth";
 
 interface AppSidebarProps {
-  settings: AISettings;
-  onSettingsChange: (newSettings: AISettings) => void;
+  // Props related to settings might be removed or changed if settings are fully managed on /settings page
+  // settings: AISettings; 
+  // onSettingsChange: (newSettings: AISettings) => void;
   onFileUpload: (fileDataUri: string, fileName: string, fileType: string) => void;
   onWebSearch: (query: string) => void;
   isSearchingWeb: boolean;
   chatHistory: { id: string, name: string }[]; 
   onSelectChat: (id: string) => void;
-  onCheckSingleApiKeyStatus: (apiKey: string, keyIndex: number) => void; // Updated prop
-  isCheckingApiKey: boolean;
-  activeKeyIndexForCheck: number | null; // Added prop
+  // Props for API key checking might also be only relevant on the /settings page
+  // onCheckSingleApiKeyStatus: (apiKey: string, keyIndex: number) => void;
+  // isCheckingApiKey: boolean;
+  // activeKeyIndexForCheck: number | null;
 }
 
 export function AppSidebar({
-  settings,
-  onSettingsChange,
   onFileUpload,
   onWebSearch,
   isSearchingWeb,
   chatHistory = [],
   onSelectChat,
-  onCheckSingleApiKeyStatus,
-  isCheckingApiKey,
-  activeKeyIndexForCheck,
 }: AppSidebarProps) {
   const { isCreatorLoggedIn } = useAuth(); 
 
@@ -52,7 +49,7 @@ export function AppSidebar({
       
       <ScrollArea className="flex-1">
         <SidebarContent className="p-0">
-           <Accordion type="multiple" defaultValue={['ai-tools', 'settings']} className="w-full">
+           <Accordion type="multiple" defaultValue={['ai-tools']} className="w-full">
             <AccordionItem value="ai-tools" className="border-b-0">
               <AccordionTrigger className="px-4 py-3 text-sm font-medium hover:no-underline hover:bg-sidebar-accent group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:py-2">
                 <div className="flex items-center gap-2">
@@ -70,25 +67,7 @@ export function AppSidebar({
               </AccordionContent>
             </AccordionItem>
 
-            <AccordionItem value="settings" className="border-b-0">
-               <AccordionTrigger className="px-4 py-3 text-sm font-medium hover:no-underline hover:bg-sidebar-accent group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:py-2">
-                 <div className="flex items-center gap-2">
-                    <Cog className="h-4 w-4 text-primary group-data-[collapsible=icon]:h-5 group-data-[collapsible=icon]:w-5" />
-                    <span className="group-data-[collapsible=icon]:hidden">Settings</span>
-                 </div>
-               </AccordionTrigger>
-              <AccordionContent className="pt-0 pb-2 group-data-[collapsible=icon]:hidden">
-                <div className="px-2">
-                  <SettingsView
-                    settings={settings}
-                    onSettingsChange={onSettingsChange}
-                    onCheckSingleApiKeyStatus={onCheckSingleApiKeyStatus} // Updated prop
-                    isCheckingApiKey={isCheckingApiKey}
-                    activeKeyIndexForCheck={activeKeyIndexForCheck} // Added prop
-                  />
-                </div>
-              </AccordionContent>
-            </AccordionItem>
+            {/* Settings AccordionItem Removed */}
 
             {chatHistory.length > 0 && (
               <AccordionItem value="history" className="border-b-0">

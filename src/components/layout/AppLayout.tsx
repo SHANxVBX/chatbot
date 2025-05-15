@@ -11,19 +11,18 @@ import { useChatController } from "@/hooks/useChatController";
 export function AppLayout() {
   const {
     messages,
-    settings,
+    // settings, // Settings are now managed on /settings page, but still accessible via hook
+    // setSettings, // Setting settings will be done on /settings page
     isLoading,
     isSearchingWeb,
     currentAIMessageId,
-    // isCreatorModeActive, // Managed internally by useChatController
-    isCheckingApiKey,
-    activeKeyIndexForCheck, // Added for specific key check UI
-    setSettings,
+    // isCheckingApiKey, // API key check is now part of /settings page
+    // activeKeyIndexForCheck, // Part of /settings page
     handleSendMessage,
     handleFileUpload,
     handleWebSearch,
     clearChat,
-    checkSingleApiKeyStatus, // Updated function name
+    // checkSingleApiKeyStatus, // This will be called from the /settings page
   } = useChatController();
 
   const chatHistory = [
@@ -40,16 +39,16 @@ export function AppLayout() {
         <AppHeader />
         <div className="flex flex-1 overflow-hidden">
           <AppSidebar
-            settings={settings}
-            onSettingsChange={setSettings}
+            // settings={settings} // No longer pass settings directly to sidebar
+            // onSettingsChange={setSettings} // No longer pass settings directly to sidebar
             onFileUpload={handleFileUpload}
             onWebSearch={handleWebSearch}
             isSearchingWeb={isSearchingWeb}
             chatHistory={chatHistory}
             onSelectChat={handleSelectChat}
-            onCheckSingleApiKeyStatus={checkSingleApiKeyStatus} // Updated prop
-            isCheckingApiKey={isCheckingApiKey}
-            activeKeyIndexForCheck={activeKeyIndexForCheck} // Added prop
+            // onCheckSingleApiKeyStatus={checkSingleApiKeyStatus} // No longer needed here
+            // isCheckingApiKey={isCheckingApiKey} // No longer needed here
+            // activeKeyIndexForCheck={activeKeyIndexForCheck} // No longer needed here
           />
           <main className="flex flex-1 flex-col overflow-hidden bg-background/50 md:m-2 md:rounded-xl md:shadow-2xl md:border md:border-border/20 glassmorphic">
             <ChatMessageList messages={messages} isLoading={isLoading} currentAIMessageId={currentAIMessageId} />

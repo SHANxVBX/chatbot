@@ -3,7 +3,7 @@
 
 import { Button } from "@/components/ui/button";
 import { CyberLogoIcon } from "@/components/icons/CyberLogoIcon";
-import { SidebarTrigger } from "@/components/ui/sidebar"; // Removed useSidebar as toggle is handled by SidebarTrigger
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Settings, Moon, Sun, LogIn, LogOut } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
@@ -42,6 +42,7 @@ export function AppHeader() {
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 animate-pulse rounded-md bg-muted" />
           <div className="h-8 w-8 animate-pulse rounded-md bg-muted" />
+          {isCreatorLoggedIn && <div className="h-8 w-8 animate-pulse rounded-md bg-muted" />}
           <div className="h-8 w-20 animate-pulse rounded-md bg-muted" />
         </div>
       </header>
@@ -62,6 +63,14 @@ export function AppHeader() {
           {isDarkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
         </Button>
         
+        {isCreatorLoggedIn && (
+          <Button variant="ghost" size="icon" asChild aria-label="Settings">
+            <Link href="/settings">
+              <Settings className="h-5 w-5" />
+            </Link>
+          </Button>
+        )}
+
         {isCreatorLoggedIn ? (
           <Button variant="ghost" onClick={logout} className="text-sm">
             <LogOut className="mr-2 h-4 w-4" />
@@ -75,10 +84,6 @@ export function AppHeader() {
             </Link>
           </Button>
         )}
-        {/* Settings button could open a dialog or navigate to a settings page */}
-        {/* <Button variant="ghost" size="icon" aria-label="Settings">
-          <Settings className="h-5 w-5" />
-        </Button> */}
       </div>
     </header>
   );
