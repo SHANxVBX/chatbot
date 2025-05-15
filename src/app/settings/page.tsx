@@ -154,30 +154,36 @@ export default function SettingsPage() {
               Personalize the avatar displayed for your messages in the chat.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-col items-center gap-4 sm:flex-row">
+          <CardContent className="space-y-6"> {/* Increased overall spacing */}
+            <div className="flex flex-col items-center gap-6 sm:flex-row sm:gap-8"> {/* Increased gap */}
                 <ShadAvatar className="h-24 w-24 border-2 border-primary/30 shadow-md">
                     <AvatarImage src={avatarPreviewUrl || undefined} alt="User Avatar Preview" data-ai-hint="abstract avatar" />
                     <AvatarFallback className="bg-muted text-muted-foreground">
                         <UserCircle className="h-12 w-12" />
                     </AvatarFallback>
                 </ShadAvatar>
-                <div className="flex-1 space-y-3">
-                    <Label htmlFor="avatar-upload" className="text-sm font-medium">Upload new avatar (Max {MAX_AVATAR_SIZE_MB}MB)</Label>
+                <div className="flex-1 space-y-3 w-full">
+                    <Label htmlFor="avatar-upload" className="text-sm font-medium block mb-1.5"> {/* Added block and margin-bottom */}
+                        Upload new avatar (Max {MAX_AVATAR_SIZE_MB}MB)
+                    </Label>
                     <Input
                         id="avatar-upload"
                         ref={avatarInputRef}
                         type="file"
                         accept={ACCEPTED_AVATAR_TYPES.join(',')}
                         onChange={handleAvatarFileChange}
-                        className="glassmorphic-input file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                        className="w-full text-sm text-foreground
+                                   file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0
+                                   file:text-sm file:font-semibold file:bg-primary/10 file:text-primary
+                                   hover:file:bg-primary/20 cursor-pointer
+                                   border border-border/50 rounded-lg p-0.5 glassmorphic-input focus-visible:ring-primary/50" // Refined styling
                     />
-                     <p className="text-xs text-muted-foreground">Accepted formats: JPG, PNG, GIF, WEBP.</p>
+                     <p className="text-xs text-muted-foreground pt-1">Accepted formats: JPG, PNG, GIF, WEBP.</p>
                 </div>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end sm:gap-4"> {/* Increased gap */}
                 {settings.userAvatarUri && (
-                     <Button variant="outline" onClick={handleRemoveAvatar} className="text-destructive hover:bg-destructive/10 hover:text-destructive-foreground">
+                     <Button variant="outline" onClick={handleRemoveAvatar} className="text-destructive hover:bg-destructive/10 hover:text-destructive-foreground border-destructive/30 hover:border-destructive/50">
                         <Trash2 className="mr-2 h-4 w-4" /> Remove Current Avatar
                     </Button>
                 )}
@@ -228,4 +234,3 @@ export default function SettingsPage() {
     </div>
   );
 }
-
