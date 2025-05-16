@@ -13,6 +13,9 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: 'CyberChat AI',
   description: 'Futuristic AI Chat Application',
+  icons: {
+    icon: 'https://raw.githubusercontent.com/vercel/next.js/canary/examples/blog/public/favicon.png'
+  }
 };
 
 export default function RootLayout({
